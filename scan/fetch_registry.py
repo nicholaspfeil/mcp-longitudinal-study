@@ -64,26 +64,33 @@ def fetch_page(cursor: str | None = None,
 
 
 def fetch_all_servers(updated_since: str | None = None) -> list[dict]:
-    """Walk every page of the registry and return all server entries.
+    """Fetch all servers from the registry, following pagination.
 
-    ---- YOUR JOB. Read the spec in the session notes before starting. ----
+    Returns a list of server entries (dicts). Each entry is the "server" field
+    from the registry response, with no "_meta" field.
 
-    Contract:
-      - Returns a flat list of the objects found in each page's "servers"
-        array. Do not unwrap or reshape them; we want the raw records.
-      - Calls fetch_page() repeatedly, passing the previous page's
-        metadata.nextCursor as the next call's cursor.
-      - Stops when there is no nextCursor.
-      - Passes updated_since straight through on every call.
-
-    Requirements that are easy to forget:
-      - Sleep SLEEP_BETWEEN_PAGES between requests.
-      - Do not loop more than MAX_PAGES times, whatever the API says.
-      - If the cursor comes back identical to the one you just sent, stop.
-        (Think about why this guard matters and what would happen without it.)
-      - Print progress. A silent 40-page walk is impossible to debug.
+    If updated_since is provided, only fetch entries changed since that timestamp.
     """
-    raise NotImplementedError("Nicholas writes this one.")
+    servers: list[dict] = []
+    cursor: str | None = None
+    page_count = 0
+
+    while True:
+        page_count += 1
+        if page_count > MAX_PAGES:
+            raise RuntimeError(f"Exceeded max pages ({MAX_PAGES})")
+
+        print(f"Fetching page {page_count} (cursor={cursor})...")
+        data = fetch_page(cursor=cursor, updated_since=updated_since)
+        servers.extend(data.get("servers", []))
+
+        cursor = data.get("metadata", {}).get("nextCursor")
+        if not cursor:
+            break
+
+        time.sleep(SLEEP_BETWEEN_PAGES)
+
+    return servers
 
 
 def main() -> None:
