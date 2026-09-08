@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
 import time
 from datetime import datetime, timezone
@@ -76,6 +75,7 @@ def fetch_all_servers(updated_since: str | None = None) -> list[dict]:
     """
     servers: list[dict] = []
     cursor: str | None = None
+    seen_cursors: set[str] = set()
     page_count = 0
 
     while True:
@@ -87,9 +87,27 @@ def fetch_all_servers(updated_since: str | None = None) -> list[dict]:
         data = fetch_page(cursor=cursor, updated_since=updated_since)
         servers.extend(data.get("servers", []))
 
-        cursor = data.get("metadata", {}).get("nextCursor")
-        if not cursor:
+        next_cursor = data.get("metadata", {}).get("nextCursor")
+
+        # No cursor means the last page. This check MUST come before the
+        # repeat check below: cursor=None means "start from the beginning"
+        # to fetch_page(), so letting None through would silently restart
+        # the walk and duplicate every entry.
+        if not next_cursor:
             break
+
+        # Pagination that does not advance. Raise rather than break — a
+        # truncated snapshot written to disk is indistinguishable from a
+        # real one later, and would read as a mass deletion event.
+        if next_cursor in seen_cursors:
+            raise RuntimeError(
+                f"Registry returned an already-used cursor ({next_cursor!r}) "
+                f"on page {page_count}. Pagination is not advancing; aborting "
+                f"rather than looping or writing a truncated snapshot."
+            )
+
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
 
         time.sleep(SLEEP_BETWEEN_PAGES)
 
@@ -119,9 +137,9 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = out_dir / f"registry-{stamp}.jsonl.gz"
+    out_path = out_dir / f"registry-{stamp}.jsonl"
 
-    with gzip.open(out_path, "wt", encoding="utf-8") as f:
+    with out_path.open("w", encoding="utf-8") as f:
         for entry in servers:
             record = {"observed_at": observed_at, "entry": entry}
             f.write(json.dumps(record, ensure_ascii=False) + "\n")

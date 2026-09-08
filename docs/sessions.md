@@ -188,9 +188,40 @@ Also fixed: the `USER_AGENT` stale `TODO` and missing `https://` scheme, and a
 docstring in `fetch_all_servers` that claimed entries were unwrapped to
 `server` with `_meta` discarded, when the code correctly stores them whole.
 
-**Still open and assigned to Nicholas:** `fetch_all_servers` has no
-repeated-cursor guard, which the original stub asked for. `MAX_PAGES` catches a
-runaway eventually, but slowly and with a misleading error.
+**Cursor guard added** — the check the original stub asked for. Tracks every
+cursor used in a `set` and raises if one comes back a second time.
+
+Three details that are load-bearing:
+
+- `next_cursor` is a separate variable from `cursor`. The old line
+  `cursor = data.get(...)` read the new value and destroyed the sent one in
+  the same statement; you cannot compare two values while holding one.
+- The `if not next_cursor: break` must come **before** the repeat check.
+  `cursor=None` means "send no cursor," which the registry reads as *start
+  from the beginning* — so letting `None` past the guard would silently
+  restart the walk and duplicate all 28k entries. This ordering is also why
+  `None` never enters `seen_cursors`, so there is no collision with the
+  initial value.
+- A `set` rather than a single previous value, so `A → B → A → B` is caught
+  as well as `A → A`. Costs ~287 strings.
+
+Raises rather than breaks: a truncated snapshot on disk is indistinguishable
+from a real one later and would read as a mass-deletion event in the survival
+curves. Missing data is honest; corrupt data wearing a disguise is not.
+
+Verified with a stubbed `fetch_page` — stuck cursor raises after 2 calls
+(previously 1000 calls over ~17 minutes ending in a misleading `MAX_PAGES`
+error), alternating cycle raises after 3, and normal/single-page pagination
+does not false-positive.
+
+**Caught during that run: `main()` was still writing `.jsonl.gz`.** The
+previous commit reverted `characterize.py` but missed the writer, so the
+storage decision was only half-applied and the third snapshot came out
+compressed. Fixed, `gzip` import dropped, snapshot converted in place and
+verified rather than re-fetching 287 pages for data already held.
+
+Third census: 28,635 entries. Registry churn observed today: 28,625 → 28,632
+→ 28,635 across roughly 2.5 hours.
 
 Open: RQ2 approach; detector set; scheduled workflow and its monitoring; the
-pandas pin; the cursor guard.
+pandas pin.

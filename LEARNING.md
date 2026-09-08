@@ -124,3 +124,17 @@ Format: **concept** — why it matters here — where to start.
   for data. Already listed under session 1 as "content hashing for change
   detection"; this session was the first time we actually used it for
   something. Same idea, different application.
+
+- [ ] **Test doubles / mocking** — you cannot ask the registry to break on
+  demand, so you replace it. `fetch_page` is a module-level name; reassigning
+  `fetch_registry.fetch_page` to a function you control makes the loop call
+  yours instead, letting you exercise a failure path reality will not hand you.
+  This is how the cursor guard was verified. Start: `unittest.mock`, then
+  `pytest` fixtures — and the distinction between a *stub* (returns canned
+  data) and a *mock* (also asserts how it was called).
+
+- [ ] **Loop invariants and progress arguments** — the cursor guard is really a
+  claim that every iteration must make progress, plus a check that the claim
+  holds. Any `while True` deserves the question "what guarantees this
+  terminates, and what happens if that guarantee is violated?" Most infinite
+  loops in production are a progress assumption nobody wrote down.
