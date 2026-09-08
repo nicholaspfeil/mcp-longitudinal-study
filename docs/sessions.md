@@ -75,3 +75,122 @@ should be made against real numbers rather than assumptions.
 
 Open: repository location; unit of observation; cohort design; RQ2 approach;
 storage format.
+
+---
+
+## Session 4 — 2026-09-08/09 — first census, and the storage decision
+
+`fetch_all_servers()` written and working. Nicholas wrote it; first version
+unwrapped `entry["server"]` and discarded `_meta`, which would have thrown away
+every timestamp in a longitudinal study. Corrected to store entries whole.
+Standing rule from this: **store raw, reshape at analysis time.**
+
+**First census: 28,625 entries, 28,625 unique names, 0 duplicates.** So
+`version=latest` collapses versions correctly and 28,625 is the sampling frame.
+29 MB uncompressed.
+
+Characterisation of that snapshot:
+
+| | count | share |
+|---|---|---|
+| with `repository` | 21,796 | 76.1% |
+| — GitHub | 21,762 | 99.8% of those |
+| — GitLab | 34 | 0.2% |
+| with `packages` | 13,177 | 46.0% |
+| with `remotes` | 16,512 | 57.7% |
+| `active` | 28,303 | 98.9% |
+| `deprecated` | 322 | 1.1% |
+| `deleted` | 0 | — |
+
+`publishedAt` spans 2025-09-09 to 2026-09-08 — the registry's entire life, so
+there is almost no pre-study history to miss.
+
+**The finding that changed the design: zero `deleted` entries.** Either nothing
+has been deleted in a year, or deletion removes the entry from the API rather
+than flagging it. We cannot tell from one snapshot, and the worse case has to be
+assumed.
+
+That kills the planned `updated_since` delta-fetch optimisation. A delta run
+returns records that *changed*; a removed server does not appear in it at all,
+because removal is an absence rather than a change. Deltas would have silently
+destroyed the ability to detect disappearance, which is the censoring signal the
+survival analysis depends on. **We therefore need the complete list of what
+exists on every run.**
+
+**Decision: Option A — full snapshot every run, gzipped, weekly.**
+
+Reasoning: simplicity is the best predictor that an unattended job survives
+twelve months; A's data can always be reduced to a manifest-plus-changes scheme
+later, but a manifest scheme's data can never be expanded back into full
+snapshots; and repo growth is not yet a measured problem. Revisit after four or
+five snapshots by watching the size of `.git`.
+
+Weekly cadence means every reported fix-time carries ±7 days of granularity,
+which must be stated rather than reporting means to two decimals.
+
+Side effect worth noting: choosing A defers the schema decision. Raw snapshots
+can be reshaped into any analysis schema later, so the expensive, hard-to-reverse
+choice does not have to be made now.
+
+Open: RQ2 approach; detector set; scheduled workflow and its monitoring.
+
+---
+
+## Session 5 — 2026-09-08 — environment, and the gzip decision reversed
+
+Housekeeping first. Repository created and pushed to
+`github.com/nicholaspfeil/mcp-longitudinal-study`; "repository location" is
+closed. Python 3.12.10 installed (this machine is **Windows on ARM64**, which
+matters below), `.venv` created, `requests==2.32.3` installed.
+
+**`pandas==2.2.3` will not install here.** No pandas 2.x release ships a
+`win_arm64` wheel — checked against PyPI directly, not assumed. pip falls back
+to building from source, which needs an MSVC toolchain. The first version with
+an ARM64 Windows wheel is 3.0.0, a major release with breaking changes. Left
+unresolved deliberately: nothing built so far needs pandas, and `characterize.py`
+does its job with `json` + `collections.Counter`. Decide when a dataframe is
+actually required. Note the asymmetry — the Linux x64 CI runner installs 2.2.3
+fine, so `requirements.txt` currently works in CI and not on the dev machine.
+
+**Reversed session 4's decision to gzip snapshots.** Full snapshots every run
+stands — the reasoning about deletion being an absence rather than a flag is
+untouched. Only the compression is reversed.
+
+Measured it on the two real snapshots rather than arguing from file size:
+
+|  | marginal cost of the 2nd snapshot |
+|---|---|
+| plain `.jsonl` | ~0.2 MB |
+| gzipped `.jsonl.gz` | ~4.1 MB |
+
+Git does not store files, it stores objects, and it *delta-compresses* similar
+ones before zlib-compressing the result. Consecutive registry dumps are nearly
+identical text, so git stores the second as a diff against the first. Gzip
+destroys this: a `.gz` is high-entropy binary, so two gzipped files of nearly
+identical input share no byte sequences, git cannot delta them, and every run
+costs full size forever.
+
+The argument that settles it regardless of churn rate: **plain JSONL's worst
+case equals gzip's every case.** If a week's churn changed every line, git
+would store ~4.3 MB — the same as a 4.35 MB `.gz`. Any churn below total, and
+the delta wins. Gzip has no scenario where it comes out ahead.
+
+At weekly cadence that is roughly 226 MB/year gzipped against 15–60 MB/year
+plain. Session 4 said to revisit after four or five snapshots by watching
+`.git`; this is that revisit, done early with a controlled comparison instead.
+
+Consequences: both `.gz` files deleted, run 2 written as plain `.jsonl` and
+verified lossless by SHA-256 round-trip, `characterize.py` reverted to reading
+plain files. The 29 MB blob from `8c38199` stays in history permanently; not
+worth rewriting for one file.
+
+Also fixed: the `USER_AGENT` stale `TODO` and missing `https://` scheme, and a
+docstring in `fetch_all_servers` that claimed entries were unwrapped to
+`server` with `_meta` discarded, when the code correctly stores them whole.
+
+**Still open and assigned to Nicholas:** `fetch_all_servers` has no
+repeated-cursor guard, which the original stub asked for. `MAX_PAGES` catches a
+runaway eventually, but slowly and with a misleading error.
+
+Open: RQ2 approach; detector set; scheduled workflow and its monitoring; the
+pandas pin; the cursor guard.

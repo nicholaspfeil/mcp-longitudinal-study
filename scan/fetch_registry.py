@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import time
 from datetime import datetime, timezone
@@ -21,10 +22,10 @@ import requests
 BASE_URL = "https://registry.modelcontextprotocol.io/v0/servers"
 
 # We identify ourselves. docs/ethics.md, "Operating rules".
-# TODO(nicholas): put your real repo URL here once the repo exists.
 USER_AGENT = (
     "mcp-longitudinal-study/0.1 "
-    "(academic measurement research; https://github.com/USERNAME/REPO)"
+    "(academic measurement research; "
+    "https://github.com/nicholaspfeil/mcp-longitudinal-study)"
 )
 
 PAGE_SIZE = 100          # tune after you find out what the API actually allows
@@ -66,8 +67,10 @@ def fetch_page(cursor: str | None = None,
 def fetch_all_servers(updated_since: str | None = None) -> list[dict]:
     """Fetch all servers from the registry, following pagination.
 
-    Returns a list of server entries (dicts). Each entry is the "server" field
-    from the registry response, with no "_meta" field.
+    Returns a list of raw registry entries. Each entry is the full record as
+    the API returned it, containing both "server" (the description) and
+    "_meta" (status and timestamps). Nothing is unwrapped here — reshaping
+    happens at analysis time.
 
     If updated_since is provided, only fetch entries changed since that timestamp.
     """
@@ -116,9 +119,9 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = out_dir / f"registry-{stamp}.jsonl"
+    out_path = out_dir / f"registry-{stamp}.jsonl.gz"
 
-    with out_path.open("w", encoding="utf-8") as f:
+    with gzip.open(out_path, "wt", encoding="utf-8") as f:
         for entry in servers:
             record = {"observed_at": observed_at, "entry": entry}
             f.write(json.dumps(record, ensure_ascii=False) + "\n")

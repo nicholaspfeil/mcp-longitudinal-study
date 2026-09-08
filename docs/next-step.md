@@ -1,158 +1,105 @@
 # NEXT STEP — read this first when you sit down
 
 *Last updated 2026-09-09. This file always describes the one thing to do next.
-When it's done, we replace it with the next one.*
+Unfamiliar word? Check `docs/glossary.md`.*
 
 ---
 
-## Where the project is right now
+## Done so far
 
-Setup is finished. Repo created, pushed to GitHub, virtual environment
-working, `requests` installed.
+- Repo set up, pushed to GitHub, virtual environment working
+- Scope locked to Tier 1 + Tier 2, written up in `docs/ethics.md`
+- `fetch_all_servers()` written and working — walks the whole registry
+- **First census: 28,625 entries, 28,625 unique server names, 0 duplicates.**
+  So `version=latest` works and that number is the study's sampling frame.
+- Snapshot saved at `data/raw/registry-20260908T174659Z.jsonl` (29 MB)
 
-**One function is unwritten**, and nothing else can happen until it exists:
-`fetch_all_servers()` in `scan/fetch_registry.py`.
+## Do next: describe what's in the snapshot
 
-## What that function does, in one sentence
+You have 28,625 records. You don't yet know what's *in* them. Four counts,
+all from the same loop you already wrote in `scan/characterize.py`.
 
-The MCP registry hands out its list of servers 100 at a time, and this
-function keeps asking for the next batch until it has them all.
+Each of these changes a decision later, so they're worth getting before the
+schema is designed.
 
-The registry won't give you everything in one response. Each response ends
-with a **cursor** — a bookmark meaning "you got up to here." You send that
-bookmark back to get the next batch. Repeat until the response comes back
-without one, which is how the registry says "that's everything." Your job is
-the loop that does that.
+### 1. How many entries have a `repository` field?
 
-## Start the session
+`repository` is the link to the server's public source code. No repository
+means no code to read, which means that server can never be part of Tier 2
+static analysis — it can only be observed at the metadata level.
 
-1. Open VS Code → File → Open Recent → `mcp-longitudinal`
-2. Ctrl + ` to open the terminal at the bottom
-3. `.venv\Scripts\Activate.ps1` — the prompt should show `(.venv)`
-4. Open `scan/fetch_registry.py` from the sidebar, find `fetch_all_servers`,
-   delete the `raise NotImplementedError` line
+**Why it matters:** this number is the ceiling on your entire code-analysis
+arm. If it's 90% you're fine. If it's 40%, half the study's design changes,
+and the paper has to say so out loud.
 
-If you ever see `ModuleNotFoundError: No module named 'requests'`, it means
-step 3 didn't happen. It's almost always step 3.
+### 2. Of those, how many are GitHub?
 
-## Write it in eight pieces
+Look at `repository["source"]`. If it's all `github`, cloning is one code
+path. If GitLab and Bitbucket show up, that's extra work to plan for.
 
-Indentation matters in Python: pieces 1 and 8 sit at 4 spaces (function
-level), pieces 3–7 at 8 spaces (inside the loop).
+### 3. What's the `status` breakdown?
 
-**1. What you're carrying through the loop**
+Count how many entries have each value of `status`: `active`, `deprecated`,
+`deleted`. ("Breakdown" = a tally of how a population splits across the
+values of one field.)
 
-```python
-    all_servers: list[dict] = []
-    cursor: str | None = None
-    seen_cursors: set[str] = set()
-```
+`status` lives inside `_meta`, under the long key
+`"io.modelcontextprotocol.registry/official"`. Pull that nested dict into a
+variable first or the lines become unreadable.
 
-The list you're filling, the bookmark for the next request (`None` means
-"start at the beginning"), and a record of bookmarks already used.
+**Why it matters:** `deleted` with a timestamp is your "this server vanished"
+signal, and vanishing is one of the outcomes the survival analysis has to
+handle. Knowing how common it already is tells you how much of the study that
+branch carries.
 
-**2. The loop**
+### 4. What's the range of `publishedAt`?
 
-```python
-    for page_num in range(1, MAX_PAGES + 1):
-```
+Oldest and newest. These are text timestamps, and because they're in
+`YYYY-MM-DDTHH:MM:SSZ` form they sort correctly as plain strings — no date
+parsing needed yet.
 
-A `for` over a range instead of `while True`, so the page cap is enforced
-automatically and there's no counter to forget.
+**Why it matters:** it tells you how much history the registry is handing you
+for free, from before your study started.
 
-**3. Fetch a page and keep its servers**
+## How to write it
 
-```python
-        data = fetch_page(cursor=cursor, updated_since=updated_since)
-
-        page_servers = data["servers"]
-        all_servers.extend(page_servers)
-        print(f"page {page_num}: {len(page_servers)} servers, {len(all_servers)} total")
-```
-
-`extend` adds the items. `append` would add the whole list as one item and
-you'd get a list of lists.
-
-**4. Look for the next bookmark**
+Same shape as the unique-names loop: one counter per question, all
+incremented inside the single pass over the file.
 
 ```python
-        next_cursor = data["metadata"].get("nextCursor")
+with_repo = 0
+...
+        server = record["entry"]["server"]
+        if "repository" in server:
+            with_repo += 1
 ```
 
-`.get()` returns `None` when the key is missing. Square brackets would crash
-on the final page, because that's exactly where the key stops being there.
+That's the pattern. The other counts are the same move.
 
-**5. Stop when there isn't one**
+For the status breakdown you want a tally per value rather than one number.
+`collections.Counter` does this in one line if you want to look it up;
+a plain dict works fine too.
+
+## One habit: look before you count
+
+Before counting a field, find one record that has it and print it:
 
 ```python
-        if next_cursor is None:
-            print(f"no nextCursor on page {page_num} — walk complete")
-            break
+print(json.dumps(server, indent=2))
 ```
 
-**6. Stop if the bookmark repeats**
+Then read the real key names. You cannot deduce what a field is called — a
+large share of bugs in data work come from assuming a field is named what you
+would have named it.
 
-```python
-        if next_cursor in seen_cursors:
-            print(f"cursor {next_cursor!r} repeated — stopping to avoid a loop")
-            break
-        seen_cursors.add(next_cursor)
-```
+## After the four numbers
 
-Without this, a registry bug that returns the same cursor twice means you
-request the same page forever, hitting someone else's server once a second
-until you notice.
+Two decisions, in this order, then we can put it on a schedule:
 
-**7. Move the bookmark forward, then wait a moment**
+1. **Storage strategy.** 29 MB per run. Full snapshots every time, or use
+   `updated_since` to fetch only what changed? Affects repo size for the next
+   year and is annoying to change later.
+2. **The schema.** What one row looks like. The expensive decision — change it
+   in month four and months one to three stop being comparable.
 
-```python
-        cursor = next_cursor
-        time.sleep(SLEEP_BETWEEN_PAGES)
-```
-
-**8. Warn if you ran out of pages, and hand back the results**
-
-```python
-    else:
-        print(f"WARNING: hit MAX_PAGES ({MAX_PAGES}) — results may be incomplete")
-
-    return all_servers
-```
-
-That `else` belongs to the `for`, not to an `if` — it lines up with the `for`
-and runs only if the loop ended without hitting a `break`. Here that means you
-burned through every allowed page and never found the end, so the data is
-truncated and you need to know.
-
-## Run it
-
-```powershell
-python -m scan.fetch_registry
-```
-
-You should see pages tick past, then a line saying where the file was written
-(somewhere under `data/raw/`).
-
-## Two numbers to write down
-
-- **Did every page return 100?** If they all come back 50, the API is
-  silently capping the page size and `PAGE_SIZE` is a fiction.
-- **What was the total?** That number is the sampling frame for the entire
-  study. Every percentage you ever report is relative to it.
-
-## When it works
-
-```powershell
-git add -A
-git commit -m "Add registry pagination walker"
-git push
-```
-
-Then say so, and we move on to reading what's actually in that file — which is
-the step that decides the database schema.
-
-## If it breaks
-
-Copy the whole error, bottom line included, and bring it back. Reading a
-traceback is a skill worth having; the last line says what went wrong and the
-lines above say where.
+Bring the four numbers back and we'll do storage.
