@@ -327,3 +327,62 @@ is one level up, on `entry`, and is present 100% of the time. Writing
 
 Open: monitoring; RQ2 approach; detector set; the pandas pin; whether registry
 growth is a burst or a trend.
+
+---
+
+## Session 8 - 2026-09-10 - the run that proved the gap
+
+First scheduled-workflow failure, and it found a real design hole rather than
+a bug in the workflow.
+
+```
+page 52  OK   com.openmedici/public:0.1.0
+page 53  500 Server Error: Internal Server Error
+```
+
+One transient 500 from the registry on page 53 of ~303. `fetch_page` called
+`raise_for_status()` with no retry, so the exception propagated, 52 pages of
+good data already in memory were discarded, nothing was written, and the run
+exited 1.
+
+**Why this was urgent rather than annoying.** A walk is ~300 requests; weekly
+for a year is ~15,700 requests against a free public API with no SLA. At that
+volume a transient failure is not a risk being accepted, it is an event being
+scheduled. Each one costs a week of the series permanently, because the
+registry only serves current state and Monday does not come back.
+
+**Fix: `urllib3.Retry` mounted on a `requests.Session`.** Chosen over a
+hand-rolled loop because it also catches connection-level failures that
+`except HTTPError` would miss, and because it implements exponential backoff,
+which is the polite behaviour `ethics.md` asks for when a server is
+struggling. The Session also reuses connections across the ~300 requests
+instead of reopening each time.
+
+Retry policy, and the reasoning behind which errors qualify:
+
+| status | retried | why |
+|---|---|---|
+| 500, 502, 503, 504 | yes | the server broke; almost always transient |
+| 429 | yes, honouring `Retry-After` | we are going too fast; slow down |
+| connection errors, timeouts | yes | network blip |
+| 4xx | **no** | we sent something wrong; retrying sends the same wrong thing and turns our own bug into a silent hang |
+
+Verified against a local server that returns 500s on demand: three 500s then
+success is absorbed in ~6s and returns data; a permanently broken server
+raises `RetryError` after 6 attempts rather than hanging.
+
+`urllib3==2.7.0` added to `requirements.txt` - it is now imported directly
+rather than arriving as a hidden dependency of `requests`.
+
+Also bumped `actions/checkout` to v5 and `actions/setup-python` to v6 ahead of
+the Node 20 deprecation. Warnings now, hard failures later, and this job is
+meant to run untouched for twelve months.
+
+**Known remaining gap:** a run is still all-or-nothing. Retries cover a blip;
+a sustained registry outage still costs the week. Partial-progress resumption
+is possible but not built, and is probably not worth it until an outage
+actually costs something.
+
+Open: monitoring (secret still not set); RQ2 approach; detector set; the
+pandas pin; whether registry growth is a burst or a trend.
+

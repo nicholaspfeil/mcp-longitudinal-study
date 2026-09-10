@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 BASE_URL = "https://registry.modelcontextprotocol.io/v0/servers"
 
@@ -30,6 +32,35 @@ USER_AGENT = (
 PAGE_SIZE = 100          # tune after you find out what the API actually allows
 SLEEP_BETWEEN_PAGES = 1.0  # seconds. We are never in a hurry.
 MAX_PAGES = 1000         # safety rail against an infinite loop
+
+# A full walk is ~300 requests. Run weekly for a year that is ~15,700 requests
+# against a free public API with no SLA, so a transient failure is not a risk
+# being accepted, it is an event being scheduled. On 2026-09-10 a single 500 on
+# page 53 killed a run that already held 52 pages of good data, and a lost run
+# is a lost week of the series -- Monday does not come back.
+#
+# Retry 5xx, 429 and connection errors. Never retry 4xx: those mean we sent
+# something wrong, so retrying sends the same wrong thing and turns our own bug
+# into a silent hang.
+RETRY_POLICY = Retry(
+    total=5,
+    backoff_factor=1.0,        # sleeps roughly 2s, 4s, 8s, 16s between tries
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=("GET",),  # only ever retry idempotent requests
+    respect_retry_after_header=True,  # if they tell us to wait, we wait
+    raise_on_status=True,      # still fail loudly once retries are exhausted
+)
+
+
+def _make_session() -> requests.Session:
+    """One Session for the whole walk: retries, plus connection reuse."""
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    session.mount("https://", HTTPAdapter(max_retries=RETRY_POLICY))
+    return session
+
+
+SESSION = _make_session()
 
 
 def fetch_page(cursor: str | None = None,
@@ -53,12 +84,7 @@ def fetch_page(cursor: str | None = None,
     if updated_since is not None:
         params["updated_since"] = updated_since
 
-    response = requests.get(
-        BASE_URL,
-        params=params,
-        headers={"User-Agent": USER_AGENT},
-        timeout=30,
-    )
+    response = SESSION.get(BASE_URL, params=params, timeout=30)
     response.raise_for_status()
     return response.json()
 

@@ -3,4 +3,7 @@
 # an upgrade that changes detector behaviour changes the data, not just the code.
 
 requests==2.32.3
+# Imported directly by scan/fetch_registry.py for its Retry policy, so it is
+# pinned explicitly rather than left to float as a requests dependency.
+urllib3==2.7.0
 pandas==2.2.3
