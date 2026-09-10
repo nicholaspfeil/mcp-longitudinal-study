@@ -1,0 +1,67 @@
+name: Weekly registry snapshot
+
+# The observation robot. Runs itself, commits what it saw, and the commit is
+# what keeps GitHub from disabling this workflow for inactivity.
+#
+# Anything that threatens the continuity of this schedule is a bigger decision
+# than it looks. See docs/sessions.md.
+
+on:
+  schedule:
+    # 07:17 UTC every Monday.
+    # Odd minute on purpose: scheduled jobs are best-effort and the top of the
+    # hour is congested, so ":00" schedules are the ones that get delayed.
+    - cron: "17 7 * * 1"
+
+  # Adds a "Run workflow" button in the Actions tab, so this can be tested
+  # without waiting until Monday.
+  workflow_dispatch:
+
+# The default token is read-only. The job pushes its own results, so it needs
+# write access to the repository contents.
+permissions:
+  contents: write
+
+# Never let two snapshot runs overlap; they would race on the same push.
+concurrency:
+  group: registry-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # a full walk is ~287 pages at 1s each, so ~5 min
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # matches the development machine
+          cache: pip
+
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch registry snapshot
+        run: python -m scan.fetch_registry
+
+      - name: Describe what was collected
+        # Not required, but it puts the census numbers in the run log, which is
+        # the cheapest possible sanity check when reading back through history.
+        run: python -m scan.characterize
+
+      - name: Commit the snapshot
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/raw
+          # If nothing changed, commit would fail and fail the whole run.
+          if git diff --staged --quiet; then
+            echo "No new snapshot to commit."
+          else
+            git commit -m "Weekly registry snapshot ($(date -u '+%Y-%m-%dT%H:%MZ'))"
+            git push
+          fi
