@@ -443,3 +443,81 @@ Open: RQ2 approach; detector set; the pandas pin; whether the 60-day
 inactivity rule is actually reset by bot commits (watch for it around
 2026-11-09).
 
+
+---
+
+## Session 10 - 2026-09-10 - first diffs, and three findings that change the design
+
+`diff_snapshots()` written and working. Compares two snapshots by name and
+emits appeared / disappeared / version_changed / description_changed /
+status_changed. Prints a summary rather than writing events, deliberately -
+the event schema is the same kind of expensive decision as the storage schema
+and should be made against real numbers.
+
+Sanity check on the 44-minute pair: 30,282 -> 30,299, appeared 17,
+disappeared 0, net +17. Consistent.
+
+The three separate `if` statements rather than `if/elif` paid off immediately:
+`io.gjalla/mcp` changed version AND description in the same window, so it
+belongs in two lists. An `elif` would have silently dropped one on the first
+real run.
+
+### Finding 1: deletion is invisible in `status`
+
+Six servers vanished between 09-08 19:10 and 09-10 00:55. **All six were
+`active` when last seen.** No snapshot has ever contained `status: deleted` -
+checked across all five.
+
+Servers are not marked deleted. They are removed from the API silently.
+
+This confirms the worst-case assumption from session 4, which is what killed
+the `updated_since` delta-fetch and forced full snapshots. A delta run returns
+records that changed; a removed record does not appear at all, because absence
+is not a change. **The storage architecture argued for on theory is now
+empirically vindicated.**
+
+Consequence: the censoring signal must come from set difference between
+consecutive snapshots, not from the `status` field. And there is no
+`deletedAt`, so death times are **interval-censored** with interval width
+equal to the polling gap - plus or minus seven days at weekly cadence. State
+this; do not smooth it.
+
+### Finding 2: status transitions are reversible
+
+`('io.gjalla/mcp-server', 'deprecated', 'active')` - a server went backwards.
+Corroborated by the deprecated counts: 322 -> 333 -> **332**.
+
+Deprecation is a phase, not an exit. A server can deprecate and revive,
+possibly repeatedly. Treating the first `deprecated` as "left the study" would
+bias every fix-time estimate in a direction undetectable after the fact. The
+survival model needs reversible states or recurrent events, not a simple
+absorbing-state progression.
+
+### Finding 3: one publisher is 83% of growth
+
+Of the 1,653 entries that appeared in the 30-hour window:
+
+| publisher | new entries |
+|---|---|
+| `io.github.sadri-dridi` | **1,376 (83.2%)** |
+| `io.github.BuilderIO` | 13 |
+| `com.bestremotetools` | 12 |
+
+One publisher mass-producing trivial single-purpose servers - `tz-asia-muscat`,
+`lang-mr`, `unicode-len`. Not organic growth.
+
+**Most consequential finding for research design.** The sampling frame is not
+a sample of the MCP ecosystem, it is substantially a sample of whoever is
+bulk-publishing that week. Any aggregate claim of the form "X% of MCP servers
+have credential exposure" would be dominated by one person's code style.
+
+`domain-notes.md` anticipated this - "a smaller, well-chosen, stable cohort
+beats a large sloppy one." There is now hard evidence for it. Cohort design
+moves from a deferred question to the next real decision: probably per-
+publisher analysis, or a cap, or reporting weighted and unweighted side by
+side.
+
+Open: cohort design (now urgent); how to model reversible status; RQ2
+approach; detector set; the pandas pin; the 60-day inactivity question
+(watch 2026-11-09).
+

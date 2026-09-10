@@ -138,3 +138,34 @@ Format: **concept** — why it matters here — where to start.
   holds. Any `while True` deserves the question "what guarantees this
   terminates, and what happens if that guarantee is violated?" Most infinite
   loops in production are a progress assumption nobody wrote down.
+
+---
+
+## Session 10 - 2026-09-10 (first diffs)
+
+### Statistics / methods
+
+- [ ] **Interval censoring** - distinct from the right-censoring already on
+  this list. Servers vanish with no timestamp, so all that is known is that
+  death happened *between two observations*. The interval width is the polling
+  gap. Read this alongside right-censoring; both appear in the same analysis.
+
+- [ ] **Recurrent events and reversible states** - a server observed going
+  `deprecated -> active` breaks the assumption that states are absorbing. The
+  same subject can produce several events. Look up multi-state survival
+  models, and the Andersen-Gill and Prentice-Williams-Peterson extensions to
+  Cox regression. Only after Kaplan-Meier makes sense.
+
+- [ ] **Sampling frame vs population, and cluster effects** - one publisher
+  produced 83% of a window's new entries. Servers are not independent
+  observations; they cluster by publisher, and a bulk publisher can dominate
+  any aggregate. Look up clustered/correlated data, the design effect, and why
+  a naive standard error is too small when observations cluster.
+
+### Data / engineering
+
+- [ ] **Set operations** - `-` for difference, `&` for intersection, `|` for
+  union. The whole diff is three of these plus a loop. Worth knowing they are
+  near-instant on large sets because sets are hash tables, which is why
+  comparing 30,000 names takes no measurable time.
+

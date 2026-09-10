@@ -76,42 +76,53 @@ def status_of(entry: dict) -> str | None:
 def diff_snapshots(old: dict[str, dict], new: dict[str, dict]) -> dict[str, list]:
     """Compare two snapshots and return the events between them.
 
-    ---- YOUR JOB. ----
+    `old` and `new` are the entries_by_name dicts from load_snapshot().
+    Returns a dict with five keys: appeared, disappeared, version_changed,
+    description_changed, status_changed.
 
-    Contract:
-      - `old` and `new` are the entries_by_name dicts from load_snapshot().
-      - Returns a dict with exactly these five keys, each holding a list:
-
-            "appeared"            names present in new but not old
-            "disappeared"         names present in old but not new
-            "version_changed"     (name, old_version, new_version)
-            "description_changed" (name, old_description, new_description)
-            "status_changed"      (name, old_status, new_status)
-
-      - The three "changed" lists only ever contain names present in BOTH
-        snapshots. A server that appeared has not "changed version"; it has
-        appeared. Keep the categories disjoint or the counts will not add up
-        and you will not be able to tell why.
-
-    The shape of the work:
-      - Names are the identity. Getting the three sets you need -- only in
-        old, only in new, in both -- is three lines if you use set operations
-        on `old.keys()` and `new.keys()`. Look up `-` and `&` on sets.
-      - Then one loop over the names in both, comparing three fields.
-
-    Things that are easy to get wrong:
-      - `version` and `description` live on entry["server"]. `status` does
-        not; use status_of(). If you reach for entry["server"]["_meta"] you
-        will get None for ~96% of records and silently find no changes.
-      - A server can change more than one field at once. It belongs in every
-        list that applies, not just the first one you check.
-      - Compare descriptions exactly. Whether "trailing whitespace changed"
-        counts as a real change is a research decision, and quietly
-        normalising it is you making that decision without noticing.
-
-    Roughly 20 lines.
+    The three "changed" lists only contain names present in BOTH snapshots --
+    a server that appeared has not changed version, it has appeared. Keeping
+    the categories disjoint is what makes the counts add up.
     """
-    raise NotImplementedError("Nicholas writes this one.")
+    old_names = set(old.keys())
+    new_names = set(new.keys())
+
+    appeared = new_names - old_names
+    disappeared = old_names - new_names
+    in_both = old_names & new_names
+
+    result = {
+        "appeared": list(appeared),
+        "disappeared": list(disappeared),
+        "version_changed": [],
+        "description_changed": [],
+        "status_changed": [],
+    }
+
+    for name in in_both:
+        old_entry = old[name]
+        new_entry = new[name]
+
+        old_version = old_entry["server"]["version"]
+        new_version = new_entry["server"]["version"]
+        if old_version != new_version:
+            result["version_changed"].append((name, old_version, new_version))
+
+        old_description = old_entry["server"]["description"]
+        new_description = new_entry["server"]["description"]
+        if old_description != new_description:
+            result["description_changed"].append(
+                (name, old_description, new_description)
+            )
+
+        # Status is NOT under ["server"]. Using the helper keeps the very long
+        # _meta key in one place, and avoids the server-level _meta collision.
+        old_status = status_of(old_entry)
+        new_status = status_of(new_entry)
+        if old_status != new_status:
+            result["status_changed"].append((name, old_status, new_status))
+
+    return result
 
 
 def summarise(events: dict[str, list], old_count: int, new_count: int,
