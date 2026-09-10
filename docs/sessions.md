@@ -225,3 +225,51 @@ Third census: 28,635 entries. Registry churn observed today: 28,625 → 28,632
 
 Open: RQ2 approach; detector set; scheduled workflow and its monitoring; the
 pandas pin.
+
+---
+
+## Session 6 — 2026-09-09/10 — the clock starts
+
+`.github/workflows/snapshot.yml` written and **verified running**. Weekly,
+Mondays 07:17 UTC, odd minute chosen because scheduled runs are best-effort
+and top-of-the-hour schedules are the ones that get delayed or skipped. Manual
+`workflow_dispatch` run went green and produced commit `9707a0a`, authored by
+`github-actions[bot]`, containing a snapshot nobody made by hand.
+
+**The study is now self-collecting.** From here, gaps in the series are
+permanent.
+
+Ordering rationale, worth keeping because it is not obvious: detectors were
+deliberately deferred behind the scheduler. Registry metadata cannot be
+reconstructed — the API serves current state only, so a tool description
+edited tomorrow is gone. Source code can be reconstructed, because the
+repositories are in git and a detector written in month four can be run
+against any past commit. Collect what expires; compute what doesn't, later.
+
+**Growth is much faster than estimated, and the estimate was bad.**
+
+| | entries |
+|---|---|
+| 2026-09-08 19:17 (manual) | 28,635 |
+| 2026-09-10 01:01 (robot) | 30,282 |
+
++1,647 in ~30 hours, about 55/hour. An earlier figure of ~4/hour in these
+notes was extrapolated from a 2.5-hour window containing 10 new entries — far
+too small a sample, and stated far too confidently. Treat it as retracted.
+
+Field proportions moved at the same time: `repository` 76.1% → 77.1%,
+`packages` 46.0% → 43.9%, `remotes` 57.7% → 59.7%. Proportions over ~29,000
+records do not drift 1–2 points in 30 hours by themselves, so the new entries
+have a different shape from the existing population — the signature of a bulk
+import rather than organic growth.
+
+Probably a burst; 5.8% per 30 hours would compound absurdly if sustained.
+Watch it over the next few snapshots, because it bears on whether the sampling
+frame is stable enough to be treated as a cohort at all.
+
+Storage holding: `.git` is 5.2 MB against 114 MB of raw snapshots. The fourth
+snapshot cost ~0.4 MB despite 1,647 new rows. Gzipped, the four would be
+~17 MB.
+
+Open: monitoring (deferred deliberately, do not let it slide); RQ2 approach;
+detector set; the pandas pin; whether registry growth is a burst or a trend.
