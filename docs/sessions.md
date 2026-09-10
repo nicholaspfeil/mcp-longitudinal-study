@@ -386,3 +386,60 @@ actually costs something.
 Open: monitoring (secret still not set); RQ2 approach; detector set; the
 pandas pin; whether registry growth is a burst or a trend.
 
+
+---
+
+## Session 9 - 2026-09-10 - the robot is complete
+
+Workflow green, healthchecks.io green. Commit `f794e22` was produced by
+`github-actions[bot]` with no human involved beyond pressing the button.
+
+**The observation infrastructure is finished.** From here the study collects
+itself weekly, and if it stops, something outside GitHub will say so.
+
+What the two alarms cover, and why both are needed:
+
+| failure | detected by | latency |
+|---|---|---|
+| run happens, run fails | GitHub failure email (verified working) | immediate |
+| run never happens at all | healthchecks.io, absence of a check-in | up to period + grace (~8 days) |
+
+GitHub cannot detect the second case: no run means no failure means no email.
+The check-in service is deliberately outside GitHub because a monitor inside
+the system it monitors cannot see that system being down - and the specific
+worry, the 60-day inactivity rule disabling the schedule, is exactly that
+case. Whether bot commits reset that clock is still unverified; the alarm now
+means we find out within a week rather than at analysis time.
+
+The check-in step is last in the job and guarded by `if: success()`, so a run
+that fetches but fails to commit does not report health.
+
+**Growth is bursty, and cannot yet be estimated.**
+
+| snapshot | entries | delta | interval | implied rate |
+|---|---|---|---|---|
+| 09-08 17:46 | 28,625 | - | - | - |
+| 09-08 18:41 | 28,632 | +7 | 55 min | ~7/hr |
+| 09-08 19:17 | 28,635 | +3 | 36 min | ~5/hr |
+| 09-10 01:01 | 30,282 | +1,647 | 29.7 h | ~55/hr |
+| 09-10 01:45 | 30,299 | +17 | 44 min | ~23/hr |
+
+Rates of 5, 7, 23 and 55 per hour from the same series. That is not noise
+around a mean, it is bursty arrival, consistent with the bulk-import reading
+of the +1,647 window. No rate should be quoted from this: five observations,
+four of them clustered in two short windows, wildly uneven spacing. The weekly
+runs will produce the first evenly-spaced series, and even spacing is the
+point of the cadence rather than the frequency.
+
+**Next: the diffing code.** Compare snapshot N to N-1 and emit an event
+stream - appeared, description changed, version changed, status changed,
+disappeared. This is the first code that uses the time dimension at all, it is
+core research logic so Nicholas writes it, and there are already five
+snapshots with real events in them to test against. It will also stress-test
+the assumption that `name` is a stable identity across snapshots, which
+everything downstream depends on.
+
+Open: RQ2 approach; detector set; the pandas pin; whether the 60-day
+inactivity rule is actually reset by bot commits (watch for it around
+2026-11-09).
+

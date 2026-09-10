@@ -8,10 +8,14 @@ Nicholas — first-year Data Science major at UC San Diego. Full-time student,
 so this project must need near-zero weekly maintenance once it's running.
 
 **Knows:** basic Python, pandas, a little scikit-learn and XGBoost,
-`git add/commit/push`, deploying a static site to Vercel.
+`git add/commit/push`, deploying a static site to Vercel. Added 2026-09-10:
+git remotes and pushing to GitHub, virtual environments, cron syntax, GitHub
+Actions (workflow files, scheduled and manual triggers, repository secrets),
+why scheduled jobs are best-effort, HTTP retries and backoff.
 
-**Does not know (yet):** SQL, databases, CI/CD, testing, async, scraping at
-scale, statistics past an intro level.
+**Does not know (yet):** SQL, databases, testing frameworks (has seen the idea
+of a stub but not written a test suite), async, scraping at scale, statistics
+past an intro level.
 
 Update these two lists as they change. They are the calibration for how much
 to explain.
