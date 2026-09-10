@@ -273,3 +273,57 @@ snapshot cost ~0.4 MB despite 1,647 new rows. Gzipped, the four would be
 
 Open: monitoring (deferred deliberately, do not let it slide); RQ2 approach;
 detector set; the pandas pin; whether registry growth is a burst or a trend.
+
+---
+
+## Session 7 — 2026-09-10 — what the registry does not contain
+
+Enumerated every server-level key across all 30,282 records rather than
+inspecting one entry:
+
+| key | coverage |
+|---|---|
+| `$schema`, `name`, `description`, `version` | 100% |
+| `repository` | 77.8% |
+| `title` | 60.1% |
+| `remotes` | 59.7% |
+| `websiteUrl` | 48.1% |
+| `packages` | 43.9% |
+| `icons` | 6.9% |
+| `_meta` (server-level) | 4.2% |
+
+**There is no tool-level data anywhere in the registry.** No `tools` key, no
+per-tool descriptions, no key containing the substring "tool".
+
+This constrains the research design and should not have to be rediscovered.
+`domain-notes.md` names rug pulls — a tool description benign at approval time
+and changed later — as the phenomenon *only* detectable with a time series,
+and therefore as the novelty claim. **Tier 1 data cannot detect a tool-level
+rug pull**, because the text sent to the model is not in what we collect.
+
+What Tier 1 *can* measure longitudinally, and this is still substantial:
+
+- `description` at the server level, **100% coverage**, ephemeral, and
+  currently being captured weekly. A publisher rewriting their description is
+  a coarse rug-pull-adjacent signal available for every server.
+- `version` changes — the publisher shipped something.
+- `status` transitions with `statusChangedAt` — the censoring signal.
+- `name` as stable identity across snapshots.
+
+Tool-level analysis requires Tier 2: tools are defined in source code, so they
+must be parsed out of the cloned repository. This does not change the build
+order — source code is in git and can be analysed retroactively, whereas
+registry metadata cannot.
+
+**Permanent hole in the sampling frame:** the ~22% of servers with no
+`repository` (about 6,700) can never be analysed at tool level by any route
+this project permits. Live probing would reach them; `ethics.md` rules it out.
+State this in any write-up rather than burying it.
+
+**Naming collision worth remembering:** `_meta` appears at the server level in
+4.2% of records and is publisher-supplied. The `_meta` this study depends on
+is one level up, on `entry`, and is present 100% of the time. Writing
+`server.get("_meta")` returns `None` for 96% of records and fails silently.
+
+Open: monitoring; RQ2 approach; detector set; the pandas pin; whether registry
+growth is a burst or a trend.

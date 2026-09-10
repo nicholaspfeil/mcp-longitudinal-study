@@ -38,20 +38,49 @@ Settings → Actions → General → Workflow permissions and select **Read and
 write permissions**. A workflow cannot grant itself more access than the
 repository settings allow.
 
-## After that: the alarm
+## Do next: finish the alarm
 
-Deferred deliberately, but it is the next real piece of work.
+The workflow step is already written and committed. It does nothing until you
+create the account and add the secret — three steps, all on your side.
 
-The problem: if the workflow *breaks*, GitHub emails you. If it silently never
-runs, nothing happens at all — and a week where nothing ran looks exactly like
-a week where nothing changed. Both are silence.
+**1. Sign up at https://healthchecks.io** — free tier, no card.
 
-So we need something that notices **absence** rather than failure: a service
-that expects a check-in every week and complains when one does not arrive.
-This is called a dead man's switch. Free tiers exist.
+**2. Create a check** named something like `mcp-registry-snapshot`.
+   - **Period: 1 week** — how often you promise to check in
+   - **Grace: 1 day** — how long it waits after a missed check-in before
+     alerting. Grace exists because scheduled runs are best-effort; a job four
+     hours late is fine, a job a day late is not.
 
-`CLAUDE.md` calls this a requirement, not a nice-to-have. Do not let it slide
-past a couple of weeks.
+   Copy the ping URL it gives you (`https://hc-ping.com/...`).
+
+**3. Add it to GitHub:** repo → Settings → Secrets and variables → Actions →
+   New repository secret. Name it exactly `HEALTHCHECK_URL`.
+
+   It goes in a secret rather than the workflow file because this repo is
+   public, and anyone who could read the URL could ping it themselves — the
+   alarm would then report health while the collector was dead.
+
+**Then trigger the workflow by hand again** (Actions → Run workflow) and
+confirm healthchecks.io flips the check to green. Until you have seen it go
+green once, the alarm is not real.
+
+### Why this design
+
+Called a dead man's switch, after the pedal a train driver holds down: if they
+collapse and let go, the train brakes by itself. Safety comes from the
+*absence* of a signal.
+
+If the workflow breaks, GitHub emails you. If it silently never runs, nothing
+happens at all — and a week where nothing ran looks exactly like a week where
+nothing changed. Both are silence.
+
+The service is deliberately **outside** GitHub. A monitor inside the system it
+monitors cannot detect that system being down. The specific failure to worry
+about is the 60-day inactivity rule disabling the schedule; an in-GitHub
+checker would stop at the same moment and tell you nothing.
+
+The check-in step is last in the job and guarded by `if: success()`, so a run
+that fetches but fails to commit does not report health.
 
 ## Then: the detectors
 

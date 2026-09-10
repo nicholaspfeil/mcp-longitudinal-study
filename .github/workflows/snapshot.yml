@@ -65,3 +65,24 @@ jobs:
             git commit -m "Weekly registry snapshot ($(date -u '+%Y-%m-%dT%H:%MZ'))"
             git push
           fi
+
+      # MUST be the last step. "Success" means the snapshot was fetched AND
+      # committed; checking in before the push would report health for a run
+      # whose data never got saved.
+      - name: Check in with the dead man's switch
+        # Runs only if every step above succeeded. A failed run must NOT check
+        # in, or the alarm reports health while the collector is broken.
+        # GitHub emails on failure; this catches the other case, where the run
+        # never happens at all and nothing is emitted to notice. Lives outside
+        # GitHub on purpose - a monitor inside the system it monitors cannot
+        # detect that system being down.
+        if: success()
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo "No HEALTHCHECK_URL secret set - skipping check-in."
+            echo "See docs/next-step.md for how to set this up."
+          else
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL" && echo "Checked in."
+          fi
