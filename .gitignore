@@ -26,3 +26,8 @@ scratch/
 
 # NOTE: data/ is deliberately NOT ignored.
 # The observation record is the point of this repository. It gets committed.
+
+# Tier 2 working area - cloned repositories are never committed.
+# They are someone else's code, they are ~28 GB at panel scale, and they are
+# always re-fetchable from their origin. Only our observations get committed.
+data/clones/
