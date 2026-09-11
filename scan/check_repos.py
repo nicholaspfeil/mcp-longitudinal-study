@@ -157,30 +157,53 @@ def main() -> None:
     # interrupted run is resumed rather than restarted, because throwing away
     # 6,000 completed checks to redo them is both wasteful and rude to the
     # hosts being re-asked.
+    # Memory stays flat regardless of panel size: only names are remembered for
+    # skipping, and outcomes are tallied as they go. Keeping 23,367 full records
+    # around to summarise at the end is what got an earlier run killed.
+    from collections import Counter
+
     partial = sorted(out_dir.glob("repos-*.jsonl.partial"))
-    done: dict[str, dict] = {}
+    done_names: set[str] = set()
+    counts = Counter()
+    reasons = Counter()
+
+    def tally(rec: dict) -> None:
+        if rec["reachable"]:
+            counts["alive"] += 1
+            return
+        counts["dead"] += 1
+        e = (rec.get("error") or "").lower()
+        if "not found" in e:
+            reasons["not found (deleted/renamed)"] += 1
+        elif "could not read username" in e or "authentication" in e:
+            reasons["private or gone (auth wanted)"] += 1
+        elif "timeout" in e:
+            reasons["timeout"] += 1
+        else:
+            reasons["other"] += 1
+
     if partial and not args.limit:
-        out_path = partial[-1].with_suffix("")          # repos-<stamp>.jsonl
         partial_path = partial[-1]
+        out_path = partial_path.with_suffix("")          # repos-<stamp>.jsonl
+        resumed_at = None
         with partial_path.open(encoding="utf-8") as f:
             for line in f:
                 try:
                     rec = json.loads(line)
                 except json.JSONDecodeError:
                     continue          # a torn last line from the kill; drop it
-                done[rec["name"]] = rec
-        observed_at = next(iter(done.values()))["observed_at"] if done else observed_at
-        print(f"resuming: {len(done):,} already checked, "
-              f"{len(repos) - len(done):,} to go\n", flush=True)
+                done_names.add(rec["name"])
+                resumed_at = resumed_at or rec["observed_at"]
+                tally(rec)
+        observed_at = resumed_at or observed_at
+        print(f"resuming: {len(done_names):,} already checked, "
+              f"{len(repos) - len(done_names):,} to go\n", flush=True)
     else:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         out_path = out_dir / f"repos-{stamp}.jsonl"
         partial_path = out_dir / f"repos-{stamp}.jsonl.partial"
 
-    todo = [r for r in repos if r["name"] not in done]
-    counts = {"alive": sum(1 for r in done.values() if r["reachable"]),
-              "dead": sum(1 for r in done.values() if not r["reachable"])}
-    results = list(done.values())
+    todo = [r for r in repos if r["name"] not in done_names]
 
     started = time.time()
     with partial_path.open("a", encoding="utf-8") as out:
@@ -188,16 +211,15 @@ def main() -> None:
             for i, result in enumerate(pool.map(check_one, todo), 1):
                 record = {"observed_at": observed_at, **result}
                 out.write(json.dumps(record, ensure_ascii=False) + "\n")
-                results.append(record)
-                counts["alive" if result["reachable"] else "dead"] += 1
+                tally(record)
 
-                if i % 500 == 0 or i == len(todo):
+                if i % 200 == 0 or i == len(todo):
                     out.flush()          # survive a kill
                     os.fsync(out.fileno())
                     elapsed = time.time() - started
                     rate = i / elapsed
                     eta = (len(todo) - i) / rate if rate else 0
-                    seen = len(done) + i
+                    seen = len(done_names) + i
                     print(f"  {seen:>6,}/{len(repos):,}  {counts['alive']:>6,} alive  "
                           f"{rate:>5.1f}/s  eta {eta/60:>5.1f} min", flush=True)
 
@@ -214,24 +236,9 @@ def main() -> None:
     print(f"  took {elapsed/60:.1f} min this session")
 
     if dead:
-        from collections import Counter
-        reasons = Counter()
-        for r in results:
-            if not r["reachable"] and r["error"]:
-                e = r["error"].lower()
-                if "not found" in e:
-                    reasons["not found (deleted/renamed)"] += 1
-                elif "could not read username" in e or "authentication" in e:
-                    # The host is asking us to log in, which means the repo is
-                    # private or gone. We never authenticate - see check_one.
-                    reasons["private or gone (auth wanted)"] += 1
-                elif "timeout" in e:
-                    reasons["timeout"] += 1
-                else:
-                    reasons["other"] += 1
         print("\n  why unreachable:")
         for reason, count in reasons.most_common():
-            print(f"    {reason:<22} {count:>7,}")
+            print(f"    {reason:<30} {count:>7,}")
 
 
 if __name__ == "__main__":

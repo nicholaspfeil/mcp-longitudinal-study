@@ -31,3 +31,8 @@ scratch/
 # They are someone else's code, they are ~28 GB at panel scale, and they are
 # always re-fetchable from their origin. Only our observations get committed.
 data/clones/
+
+# A half-finished repo check. Never commit one: a stale .partial would make
+# next week's run "resume" a previous week's observation and stamp this week's
+# results with last week's observed_at.
+*.jsonl.partial
