@@ -148,35 +148,70 @@ def main() -> None:
     print(f"panel:   {panel_path.name} ({panel['count']:,} members)")
     print(f"checking {len(repos):,} repositories with {args.workers} workers\n")
 
-    results = []
-    started = time.time()
-    with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        for i, result in enumerate(pool.map(check_one, repos), 1):
-            results.append(result)
-            if i % 500 == 0 or i == len(repos):
-                elapsed = time.time() - started
-                rate = i / elapsed
-                remaining = (len(repos) - i) / rate if rate else 0
-                alive = sum(1 for r in results if r["reachable"])
-                print(f"  {i:>6,}/{len(repos):,}  {alive:>6,} alive  "
-                      f"{rate:>5.1f}/s  eta {remaining/60:>5.1f} min", flush=True)
-
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = out_dir / f"repos-{stamp}.jsonl"
 
-    with out_path.open("w", encoding="utf-8") as f:
-        for r in results:
-            f.write(json.dumps({"observed_at": observed_at, **r}, ensure_ascii=False) + "\n")
+    # Resume support. This run takes ~30 minutes against 23,000 external hosts,
+    # so it WILL be interrupted sometimes -- killed for memory, a laptop lid,
+    # a dropped network. Results are streamed to disk as they arrive and an
+    # interrupted run is resumed rather than restarted, because throwing away
+    # 6,000 completed checks to redo them is both wasteful and rude to the
+    # hosts being re-asked.
+    partial = sorted(out_dir.glob("repos-*.jsonl.partial"))
+    done: dict[str, dict] = {}
+    if partial and not args.limit:
+        out_path = partial[-1].with_suffix("")          # repos-<stamp>.jsonl
+        partial_path = partial[-1]
+        with partial_path.open(encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue          # a torn last line from the kill; drop it
+                done[rec["name"]] = rec
+        observed_at = next(iter(done.values()))["observed_at"] if done else observed_at
+        print(f"resuming: {len(done):,} already checked, "
+              f"{len(repos) - len(done):,} to go\n", flush=True)
+    else:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        out_path = out_dir / f"repos-{stamp}.jsonl"
+        partial_path = out_dir / f"repos-{stamp}.jsonl.partial"
 
-    alive = sum(1 for r in results if r["reachable"])
-    dead = len(results) - alive
+    todo = [r for r in repos if r["name"] not in done]
+    counts = {"alive": sum(1 for r in done.values() if r["reachable"]),
+              "dead": sum(1 for r in done.values() if not r["reachable"])}
+    results = list(done.values())
+
+    started = time.time()
+    with partial_path.open("a", encoding="utf-8") as out:
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for i, result in enumerate(pool.map(check_one, todo), 1):
+                record = {"observed_at": observed_at, **result}
+                out.write(json.dumps(record, ensure_ascii=False) + "\n")
+                results.append(record)
+                counts["alive" if result["reachable"] else "dead"] += 1
+
+                if i % 500 == 0 or i == len(todo):
+                    out.flush()          # survive a kill
+                    os.fsync(out.fileno())
+                    elapsed = time.time() - started
+                    rate = i / elapsed
+                    eta = (len(todo) - i) / rate if rate else 0
+                    seen = len(done) + i
+                    print(f"  {seen:>6,}/{len(repos):,}  {counts['alive']:>6,} alive  "
+                          f"{rate:>5.1f}/s  eta {eta/60:>5.1f} min", flush=True)
+
+    # Only now is the observation complete. Renaming the .partial is what marks
+    # it as a finished run, so a half-written file is never mistaken for one.
+    partial_path.replace(out_path)
+
+    alive, dead = counts["alive"], counts["dead"]
+    total = alive + dead
     elapsed = time.time() - started
-    print(f"\nwrote {len(results):,} records to {out_path}")
-    print(f"  reachable    {alive:>7,}  ({alive/len(results):.1%})")
-    print(f"  unreachable  {dead:>7,}  ({dead/len(results):.1%})")
-    print(f"  took {elapsed/60:.1f} min")
+    print(f"\nwrote {total:,} records to {out_path}")
+    print(f"  reachable    {alive:>7,}  ({alive/total:.1%})")
+    print(f"  unreachable  {dead:>7,}  ({dead/total:.1%})")
+    print(f"  took {elapsed/60:.1f} min this session")
 
     if dead:
         from collections import Counter
