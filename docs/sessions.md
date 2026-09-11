@@ -521,3 +521,65 @@ Open: cohort design (now urgent); how to model reversible status; RQ2
 approach; detector set; the pandas pin; the 60-day inactivity question
 (watch 2026-11-09).
 
+
+---
+
+## Session 11 - 2026-09-10/11 - the panel is frozen
+
+**Decision: analysis strategy is Option B - open population, report both.**
+Everything keeps being collected. Statistics get computed twice: once over all
+servers present that week, once over the frozen panel. Charts carry two lines
+and an explanation of why they differ.
+
+**Decision: panel membership is every server with a `repository` field.**
+23,367 members, 77.1% of the snapshot, from 13,030 distinct publishers
+(23,331 GitHub, 36 GitLab). 284 were already deprecated at freeze time and are
+deliberately included - deprecation is a state being measured, and excluding
+it would bias the panel toward servers that were healthy on day one.
+
+Written to `data/panel-2026-09-11.json`, 8.1 MB, frozen from
+`registry-20260910T014555Z.jsonl` observed 2026-09-10T01:39:22Z.
+
+### Why a panel at all, and why today
+
+Without a decision, the default was a repeated cross-section - "whatever is in
+the registry that day." That is the wrong instrument for measuring change,
+because the thing flowing in is not like the thing already there.
+
+Stock and flow turn out to differ sharply here:
+
+| | |
+|---|---|
+| stock: 30,299 servers from 18,175 publishers | diverse - 16,302 publishers have exactly one server, biggest is 5.0% of total |
+| flow: +1,647 in one 30-hour window | concentrated - 83.2% from a single publisher |
+
+The population is a long tail; the arrivals are lumpy. For RQ3 ("is the
+ecosystem getting healthier") that gap is fatal if ignored: a bulk publisher
+uploading 3,000 trivial clean servers would move the aggregate vulnerability
+rate down, and the finding would read as improvement when nothing improved.
+
+Freezing today rather than later is the whole point. Picking a panel in March
+would select from servers that still exist in March - selecting for servers
+that do not die, then measuring how often they die. That is survivorship bias,
+and it yields a clean, wrong answer. The list is cheap to write now and
+impossible to reconstruct honestly later.
+
+### The write-once guard
+
+`scan/freeze_panel.py` refuses to run if any `data/panel-*.json` exists, and
+exits non-zero. Verified by running it twice. The guard is deliberately a hard
+stop rather than a warning: the failure it prevents is silent, six months
+delayed, and invalidates the study rather than breaking it. Changing the
+membership rule now requires writing down why here first and moving the old
+file aside by hand, so the decision leaves a trace.
+
+Servers without a repository (6,932) are not panel members but continue to be
+collected weekly and remain available for Tier 1 analysis. They can never
+enter Tier 2 - no source to read - which is a permanent hole in the frame,
+already recorded in session 7.
+
+Open: how to model reversible status; RQ2 approach (unresolved since session 1
+and possibly not answerable observationally - decide whether to drop it);
+detector set; the pandas pin; the 60-day inactivity question (watch
+2026-11-09).
+
