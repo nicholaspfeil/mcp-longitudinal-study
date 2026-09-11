@@ -80,12 +80,28 @@ def check_one(repo: dict) -> dict:
 
     try:
         proc = subprocess.run(
-            ["git", "ls-remote", url, "HEAD"],
+            # -c credential.helper= disables the credential helper for this
+            # call only. Without it, Git Credential Manager on Windows opens a
+            # GUI sign-in window for private or missing repos -- GIT_TERMINAL_
+            # PROMPT=0 does not suppress that, because it is not a terminal
+            # prompt -- and the run blocks forever waiting for a human.
+            #
+            # We never want to authenticate here. This study reads what is
+            # publicly readable; a repo we cannot read anonymously IS
+            # unreachable for our purposes, and that is a finding, not a
+            # problem to log into.
+            ["git", "-c", "credential.helper=", "ls-remote", url, "HEAD"],
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
-            env={**os.environ, "GIT_HTTP_USER_AGENT": USER_AGENT,
-                 "GIT_TERMINAL_PROMPT": "0"},  # never block asking for a password
+            env={
+                **os.environ,
+                "GIT_HTTP_USER_AGENT": USER_AGENT,
+                "GIT_TERMINAL_PROMPT": "0",   # no terminal prompt
+                "GCM_INTERACTIVE": "never",   # no Credential Manager GUI
+                "GIT_ASKPASS": "",            # no askpass helper either
+                "SSH_ASKPASS": "",
+            },
         )
         if proc.returncode == 0 and proc.stdout.strip():
             result["reachable"] = True
@@ -168,8 +184,12 @@ def main() -> None:
         for r in results:
             if not r["reachable"] and r["error"]:
                 e = r["error"].lower()
-                if "not found" in e or "repository not found" in e:
-                    reasons["not found / private"] += 1
+                if "not found" in e:
+                    reasons["not found (deleted/renamed)"] += 1
+                elif "could not read username" in e or "authentication" in e:
+                    # The host is asking us to log in, which means the repo is
+                    # private or gone. We never authenticate - see check_one.
+                    reasons["private or gone (auth wanted)"] += 1
                 elif "timeout" in e:
                     reasons["timeout"] += 1
                 else:
