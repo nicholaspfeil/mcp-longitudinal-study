@@ -583,3 +583,52 @@ and possibly not answerable observationally - decide whether to drop it);
 detector set; the pandas pin; the 60-day inactivity question (watch
 2026-11-09).
 
+
+---
+
+## Session 12 - 2026-09-12/13 - first Tier 2 observation
+
+`check_repos` ran on Actions and produced the first repository liveness
+observation: `data/repo-state/repos-20260913T042248Z.jsonl`, 23,367 records,
+6.5 MB, about 13 minutes wall clock.
+
+| | | |
+|---|---|---|
+| reachable | 19,870 | 85.0% |
+| unreachable | 3,497 | 15.0% |
+
+**15.0% falls inside the 12.2-20.5% interval predicted from a 300-repo random
+sample**, which is the check that matters: a half-failed run would have
+reported thousands of extra dead repositories and looked like a catastrophic
+week for the ecosystem rather than a broken observation.
+
+Breakdown of the unreachable: 3,462 not found (deleted, renamed or private),
+19 auth-wanted, 16 other. **Zero timeouts and zero rate limiting** - 23,367
+unauthenticated git requests from one runner IP in 13 minutes did not trip
+GitHub's abuse protection, which was the anticipated failure. Median check
+0.26s, p95 0.45s, max 2.97s.
+
+Local runs had been killed for memory twice; the runner handled it without
+difficulty and faster than the laptop, so Tier 2 collection belongs on Actions
+permanently.
+
+### The 3,497 are left-truncated, not events
+
+They were already gone the first time we looked, so their death times are
+unobservable and unrecoverable. The Tier 2 survival cohort is therefore the
+**19,870 repositories caught alive**; only those can contribute an observed
+duration. The dead 3,497 remain a finding about data quality - the registry
+does not validate `repository`, and roughly 15% of the links are already rotten
+- but they cannot enter a survival curve. State this explicitly in any
+write-up rather than burying it.
+
+There are now two independent clocks running: registry-entry presence (Tier 1,
+5 observations) and repository reachability (Tier 2, 1 observation). A server
+can exit via either without the other, which is the competing-risks structure
+identified in session 10, now actually instrumented.
+
+Open: detector pattern list and rules_version policy (both decided by
+Nicholas, unresolved); HEALTHCHECK_URL_REPOS not yet set so the repo-check job
+has no alarm; RQ2 approach; the pandas pin; first scheduled unattended runs
+fire Monday 2026-09-14.
+
