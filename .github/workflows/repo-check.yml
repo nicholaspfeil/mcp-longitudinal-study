@@ -16,6 +16,16 @@ on:
     - cron: "23 8 * * 1"
 
   workflow_dispatch:
+    inputs:
+      limit:
+        description: "Check only the first N repos (blank = all 23,367). Use to smoke-test the workflow without re-asking 23,000 hosts."
+        required: false
+        default: ""
+      commit:
+        description: "Commit the observation. Turn OFF for a smoke test - a partial run is not a valid weekly observation and must never enter the data."
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: write
@@ -43,9 +53,21 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Check every panel repository
-        run: python -u -m scan.check_repos --workers 8
+        run: |
+          if [ -n "${{ inputs.limit }}" ]; then
+            echo "SMOKE TEST: checking only ${{ inputs.limit }} repositories."
+            python -u -m scan.check_repos --workers 8 --limit "${{ inputs.limit }}"
+          else
+            python -u -m scan.check_repos --workers 8
+          fi
 
       - name: Commit the observation
+        # Scheduled runs always commit. Manual runs commit unless the box is
+        # unticked. The condition is written explicitly rather than as
+        # `inputs.commit` because on a schedule the inputs context is empty,
+        # and an empty string compares equal to false in GitHub expressions --
+        # which would silently stop every scheduled run from committing.
+        if: github.event_name == 'schedule' || inputs.commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
