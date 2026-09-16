@@ -182,7 +182,24 @@ def scan_text(text: str, relative_path: str) -> list[dict]:
 
     Roughly 12 lines.
     """
-    raise NotImplementedError("Nicholas writes this one.")
+    findings: list[dict] = []
+
+    for line_number, line in enumerate(text.splitlines(), 1):
+        # Every rule against every line: one line can match more than one rule.
+        for rule_name, pattern in COMPILED.items():
+            # finditer, not search: one rule can match more than once per line.
+            for match in pattern.finditer(line):
+                matched_text = match.group(0)
+                if matched_text in ALLOWLIST:
+                    continue
+                findings.append({
+                    "file": relative_path,
+                    "line": line_number,
+                    "rule": rule_name,
+                    "match_sha256": fingerprint(matched_text),
+                })
+
+    return findings
 
 
 def scan_repo(root: Path) -> list[dict]:
