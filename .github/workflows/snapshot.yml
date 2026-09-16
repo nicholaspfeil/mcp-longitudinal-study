@@ -30,7 +30,13 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30 # a full walk is ~287 pages at 1s each, so ~5 min
+    # A clean walk is ~6 minutes. The 2026-09-14 scheduled run took 30m23s and
+    # was killed by a 30-minute limit set with what looked like 6x headroom.
+    # The retry logic is why: every 5xx backs off 2/4/8/16s, and across 300+
+    # pages a flaky hour compounds into hours. Budget for the bad day, not the
+    # good one -- a killed run costs a week of a series that cannot be
+    # backfilled, and an idle runner costs nothing on a public repo.
+    timeout-minutes: 120
 
     steps:
       - name: Check out the repository
@@ -85,4 +91,22 @@ jobs:
             echo "See docs/next-step.md for how to set this up."
           else
             curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL" && echo "Checked in."
+          fi
+
+      # Report failure immediately instead of waiting for the weekly period to
+      # lapse. With a 1-week period and 1-day grace, a Monday failure would not
+      # be reported until the following Thursday -- nine days of silence on the
+      # collector whose data cannot be backfilled. Pinging /fail turns the
+      # check red now.
+      #
+      # Note this cannot catch a job killed by the job-level timeout, since
+      # GitHub cancels remaining steps. The timeout headroom above is the
+      # defence against that case.
+      - name: Report failure to the dead man's switch
+        if: failure()
+        env:
+          HEALTHCHECK_URL: ${{ secrets.HEALTHCHECK_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_URL" ]; then
+            curl -fsS -m 10 --retry 3 "${HEALTHCHECK_URL%/}/fail" && echo "Reported failure."
           fi

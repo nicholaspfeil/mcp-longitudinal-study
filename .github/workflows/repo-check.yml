@@ -93,3 +93,14 @@ jobs:
           else
             curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL_REPOS" && echo "Checked in."
           fi
+
+      # See the equivalent step in snapshot.yml: with a weekly period a Monday
+      # failure would otherwise go unreported until Thursday.
+      - name: Report failure to the dead man's switch
+        if: failure()
+        env:
+          HEALTHCHECK_URL_REPOS: ${{ secrets.HEALTHCHECK_URL_REPOS }}
+        run: |
+          if [ -n "$HEALTHCHECK_URL_REPOS" ]; then
+            curl -fsS -m 10 --retry 3 "${HEALTHCHECK_URL_REPOS%/}/fail" && echo "Reported failure."
+          fi
