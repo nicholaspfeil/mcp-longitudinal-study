@@ -632,3 +632,92 @@ Nicholas, unresolved); HEALTHCHECK_URL_REPOS not yet set so the repo-check job
 has no alarm; RQ2 approach; the pandas pin; first scheduled unattended runs
 fire Monday 2026-09-14.
 
+
+---
+
+## Session 13 - 2026-09-14/16 - first unattended runs, three infrastructure failures
+
+The first scheduled Monday. Both jobs fired; one produced nothing, and the
+reasons are worth keeping because none of them were in the research code.
+
+**Failure 1 - the snapshot job was killed by its own timeout.** Scheduled
+07:17, ran 30m23s against a `timeout-minutes: 30` set with what looked like 6x
+headroom over a ~6-minute walk. The retry logic is what consumed it: every 5xx
+backs off 2/4/8/16s, and across 300+ pages a flaky hour compounds into hours.
+Killed mid-walk, so no commit and no Monday observation. Raised to 120
+minutes - an idle runner is free on a public repo, a lost week is not.
+
+**Failure 2 - the alarm could not report it.** healthchecks stayed green and
+was not wrong: last ping was 2026-09-10, period one week, so it was not due
+until the 17th. But that means a Monday failure would not surface until
+Thursday - nine days of silence on the collector whose data cannot be
+backfilled. "Did it run" and "did it fail" are different questions and only
+the first was instrumented. Both workflows now ping `<url>/fail` on failure,
+which turns the check red immediately. This cannot catch a job killed by the
+job-level timeout, since GitHub cancels remaining steps; the raised timeout is
+the defence there.
+
+**Failure 3 - the bot push was rejected.** A manual re-run collected 32,316
+entries correctly, committed them, then failed to push: the job had checked
+out 8dbdda8 and a human pushed deb3ab6 while it was collecting, making its
+push a non-fast-forward. The runner was discarded with the snapshot on it, so
+a correct collection produced no data. Both workflows now rebase onto
+origin/main and retry five times.
+
+Rebasing is unconditionally safe here because every observation is a new
+timestamped file that nothing else touches. That falls out of the append-only
+rule, which was adopted for data integrity and turns out to also make
+concurrent writes recover automatically.
+
+The `/fail` ping earned its keep on its first outing - failure email arrived
+in minutes rather than on Thursday.
+
+The repo check ran unattended successfully but **6h42m late** (scheduled
+08:23, observed 15:05). Best-effort scheduling is real, not theoretical, and
+this is why `observed_at` is recorded at run time rather than inferred from
+cron.
+
+### First week-scale Tier 1 diff (09-10 to 09-16, 6 days)
+
+| | |
+|---|---|
+| appeared | 2,032 |
+| disappeared | 15 |
+| version_changed | 1,374 |
+| description_changed | 271 |
+| status_changed | 11 |
+
+**The 83% publisher concentration was a burst, now confirmed.** Top publisher
+is 28.1% of new entries over this window against 83.2% in the 30-hour window,
+and growth slowed from ~1,300/day to ~336/day. The ecosystem is not
+permanently dominated by one publisher, but it can be for a day - which is
+precisely the distortion the frozen panel exists to survive.
+
+271 description changes in six days, ~45/day, is the rug-pull-adjacent signal
+at usable volume.
+
+### First Tier 2 diff (09-13 to 09-14, 1.4 days)
+
+12 repos died, **5 came back**, 3,102 gained commits, 20,248 unchanged.
+
+**Repos revive, so a single unreachable observation must not count as death.**
+One of the 12 "deaths" was `gitlab-org/gitlab` - GitLab's own flagship
+repository, which plainly did not die. Transient failure. A death rule needs N
+consecutive unreachable observations, and choosing N is an open research
+decision. Without it every network hiccup manufactures a death event.
+
+**Repository URLs are not unique.** `com.trustycap/trustycap` and
+`com.trustysweep/sweep` both point at `TrustyCap-Technologies/trustycap-mcp`.
+A finding in that repo would be counted twice, so any per-server prevalence is
+silently repo-weighted. Measure how common this is before quoting a
+prevalence.
+
+**Clone budget is tighter than hoped.** 3,102 repos changed in 1.4 days
+(15.6% of live). A week is plausibly 30-40%, so 6,000-8,000 clones at ~3.4s -
+6 to 7.5 hours, over the 6-hour job limit. The scanner will need to be a
+sharded matrix job, not a loop.
+
+Open: `scan_text()` unwritten - the only thing blocking an actual security
+measurement; N for the death rule; duplicate-repo prevalence; scanner
+sharding; RQ2; the pandas pin.
+
