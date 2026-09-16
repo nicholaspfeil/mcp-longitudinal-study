@@ -67,10 +67,29 @@ jobs:
           # If nothing changed, commit would fail and fail the whole run.
           if git diff --staged --quiet; then
             echo "No new snapshot to commit."
-          else
-            git commit -m "Weekly registry snapshot ($(date -u '+%Y-%m-%dT%H:%MZ'))"
-            git push
+            exit 0
           fi
+          git commit -m "Weekly registry snapshot ($(date -u '+%Y-%m-%dT%H:%MZ'))"
+
+          # The branch may have moved while we were collecting: this job runs
+          # for minutes, and a human pushing during that window makes our push
+          # a non-fast-forward. That happened on 2026-09-16 and cost a whole
+          # snapshot -- collected correctly, committed locally, then discarded
+          # with the runner because it could not land.
+          #
+          # Rebasing is always safe here: this commit only ADDS a new
+          # timestamped file that nothing else touches, so it cannot conflict.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected; rebasing onto origin/main and retrying."
+            git pull --rebase --autostash origin main || exit 1
+            sleep $((attempt * 3))
+          done
+          echo "Could not push after 5 attempts."
+          exit 1
 
       # MUST be the last step. "Success" means the snapshot was fetched AND
       # committed; checking in before the push would report health for a run

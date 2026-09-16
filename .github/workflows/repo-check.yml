@@ -74,10 +74,24 @@ jobs:
           git add data/repo-state
           if git diff --staged --quiet; then
             echo "No new observation to commit."
-          else
-            git commit -m "Weekly repository check ($(date -u '+%Y-%m-%dT%H:%MZ'))"
-            git push
+            exit 0
           fi
+          git commit -m "Weekly repository check ($(date -u '+%Y-%m-%dT%H:%MZ'))"
+
+          # See snapshot.yml: this job runs for tens of minutes, so the branch
+          # can move underneath it. Rebasing is safe because the commit only
+          # adds a new timestamped file.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected; rebasing onto origin/main and retrying."
+            git pull --rebase --autostash origin main || exit 1
+            sleep $((attempt * 3))
+          done
+          echo "Could not push after 5 attempts."
+          exit 1
 
       # Last, and only on success, for the same reason as the snapshot job: a
       # run that checked but failed to commit must not report health.
