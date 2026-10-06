@@ -169,3 +169,30 @@ Format: **concept** — why it matters here — where to start.
   near-instant on large sets because sets are hash tables, which is why
   comparing 30,000 names takes no measurable time.
 
+
+---
+
+## Session 15 - 2026-10-06 (scan pipeline design)
+
+### Statistics / methods
+
+- [ ] **Missing data vs a negative result** - "we looked and found nothing" and
+  "we didn't look" are different observations, and a dataset that stores only
+  positives can't tell them apart. Look up *missing completely at random /
+  missing at random / missing not at random*. Then ask which one a failed clone
+  is: big repos time out more often, so failures aren't random.
+
+- [ ] **Construct validity** - does the measurement measure the thing you claim?
+  "Key removed from HEAD" vs "key revoked" is a textbook case. Read how security
+  measurement papers define *remediation*.
+
+### Data / engineering
+
+- [ ] **Shallow and partial clones** - `--depth 1` (history cut) vs
+  `--filter=blob:limit=...` (big files skipped). Why git can do this at all:
+  read how commits, trees and blobs relate in git's object model.
+
+- [ ] **Embarrassingly parallel work and sharding** - work that splits into
+  independent pieces with no shared state. Look up GitHub Actions
+  `strategy.matrix`, and hash-based partitioning: why `hash(key) % N` gives
+  every worker a stable, roughly equal share.

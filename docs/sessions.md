@@ -721,3 +721,48 @@ Open: `scan_text()` unwritten - the only thing blocking an actual security
 measurement; N for the death rule; duplicate-repo prevalence; scanner
 sharding; RQ2; the pandas pin.
 
+
+## Session 14 - 2026-09-16 - scan_text() written
+
+*Logged retroactively in session 15; reconstructed from commit f9828ce.*
+
+Nicholas wrote `scan_text()`, the body of the credential detector: every line,
+every rule against that line, and `finditer` rather than `search`, because
+each shortcut causes its own undercount. Allowlisted placeholders are skipped
+by exact matched text, so a real key on the same line as an example still
+counts. Verified with six hand-made fixtures, then against nine real MCP repos
+(802 files, zero findings). Because zero findings is also what a broken
+detector returns, canaries were planted in a real checkout: a live-format key
+was found, `AKIAIOSFODNN7EXAMPLE` was not, and a key inside `node_modules` was
+never walked. The fixtures were not saved as tests.
+
+Open: everything from session 13, plus the detector still runs only by hand.
+
+## Session 15 - 2026-09-30/10-06 - restart, gap audit, scan pipeline design
+
+New Claude session (the old app session broke); re-oriented from this log.
+Both workflows ran unattended on 09-21, 09-28 and 10-05.
+
+Gap audit, in priority order: (1) no scan pipeline, so no security data yet;
+(2) "fixed" is undefined - removed from HEAD is not the same as revoked, since
+the key stays in git history; (3) `private_key_block` matches only the PEM
+header, so every private key gets the same fingerprint - left for Nicholas to
+reason through; (4) `ethics.md` has no policy for live credentials we find,
+which is tied to RQ2; (5) the death rule's N; (6) **registry snapshot files
+grow ~3 MB/week (32.7 -> 37.2 MB); GitHub warns at 50 MB and rejects files over
+100 MB, around 2027-03 at the current rate - inside the study window**; (7) no
+saved tests; (8) `next-step.md` stale since 09-09.
+
+Measured on 2026-09-28: 19,478 live panel servers but only **16,314 unique
+repo URLs - 16% of live servers share a repo**. That partly answers the
+duplicate-repo question. 4,422 URLs (27%) changed HEAD week over week.
+
+Decided: the scan pipeline is keyed by repository URL, not by server.
+Shallow clone with `--filter=blob:limit=1m` (matches `MAX_FILE_BYTES`),
+sharded as an Actions matrix. Claude writes the plumbing; Nicholas decides
+(A) which repos get scanned each week, (B) the output row schema - the crux,
+since a clean repo currently leaves no row, so clean / failed / unscanned are
+indistinguishable - and (C) which SHA is recorded. Then he writes
+`select_repos()`.
+
+Open: A/B/C; fix #3 before the first full scan; snapshot file-size deadline.
