@@ -196,3 +196,9 @@ Format: **concept** — why it matters here — where to start.
   independent pieces with no shared state. Look up GitHub Actions
   `strategy.matrix`, and hash-based partitioning: why `hash(key) % N` gives
   every worker a stable, roughly equal share.
+
+- [ ] **Normalization (one-to-many relationships)** - one scan has zero or more
+  findings, so they live in two tables linked by a shared key, not one table
+  with a list column. This is the core idea behind relational databases and
+  SQL joins, and Nicholas arrived at it himself while designing the scan
+  output. Start with "first normal form" and "one-to-many".
