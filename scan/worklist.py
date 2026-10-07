@@ -59,7 +59,8 @@ def load_scan_history() -> list[dict]:
 def select_repos(liveness: list[dict], scan_history: list[dict]) -> list[str]:
     """Return the repository URLs to scan this week.
 
-    ---- YOUR JOB. ----
+    Written by Claude at Nicholas's request (session 15), with a line-by-line
+    walkthrough; the rule it implements is his decision A.
 
     Inputs:
       liveness      rows from the newest liveness file. Each has at least
@@ -93,7 +94,23 @@ def select_repos(liveness: list[dict], scan_history: list[dict]) -> list[str]:
 
     Roughly 8-12 lines.
     """
-    raise NotImplementedError("select_repos is Nicholas's to write")
+    # Every (repo, commit) we have actually read. Only "scanned" counts: a
+    # timeout or unreachable attempt read nothing, so that repo comes back.
+    already_scanned = {
+        (row["repository_url"], row["commit_sha"])
+        for row in scan_history
+        if row["status"] == "scanned"
+    }
+
+    to_scan: set[str] = set()
+    for row in liveness:
+        if not row["reachable"]:
+            continue
+        if (row["repository_url"], row["head_sha"]) in already_scanned:
+            continue
+        to_scan.add(row["repository_url"])
+
+    return sorted(to_scan)
 
 
 def main() -> None:

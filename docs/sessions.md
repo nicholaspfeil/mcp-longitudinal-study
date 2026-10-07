@@ -765,4 +765,25 @@ since a clean repo currently leaves no row, so clean / failed / unscanned are
 indistinguishable - and (C) which SHA is recorded. Then he writes
 `select_repos()`.
 
-Open: A/B/C; fix #3 before the first full scan; snapshot file-size deadline.
+Nicholas then decided all three. B: two files, `scans-*.jsonl` with one line
+per repo *attempted* (clean or not), and `findings-*.jsonl` with one line per
+key, linked by `(repository_url, observed_at)`. Status values are `scanned`,
+`not_found`, `unreachable`, `timeout` and `scan_error`, plus `n_findings`.
+He first proposed skipping clean repos for size and speed; pushed back,
+because absence can't tell "clean" from a crash or timeout, and it costs about
+1 MB/week. He then derived the two-file design himself. C: record the SHA
+actually cloned. A: compare liveness against the last *successfully scanned*
+SHA, not last week's liveness SHA, or a repo whose first scan failed is never
+retried. Written up in `docs/scan-schema.md`.
+
+`select_repos()` (in `scan/worklist.py`, renamed from `select.py` to avoid
+shadowing the stdlib) was written by Claude at Nicholas's explicit request,
+breaking rule 2 for this function, after two rounds of confusion about the ask.
+It was followed by a line-by-line walkthrough. Takeaway for future sessions: he
+does better with one concrete question at a time than with a docstring brief.
+Checked on 10-05 data: 16,596 to scan (equal to unique live URLs, since nothing
+has been scanned yet) and a hand-made case covering duplicates, timeout retry,
+unchanged and unreachable repos.
+
+Open: the clone-and-scan runner and workflow (Claude); fix #3 before the first
+full scan; snapshot file-size deadline.
