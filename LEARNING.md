@@ -202,3 +202,12 @@ Format: **concept** — why it matters here — where to start.
   with a list column. This is the core idea behind relational databases and
   SQL joins, and Nicholas arrived at it himself while designing the scan
   output. Start with "first normal form" and "one-to-many".
+
+- [ ] **Hash randomization** - Python's built-in `hash()` of a string changes
+  every time Python starts (look up `PYTHONHASHSEED` and "hash flooding" to see
+  why that was a deliberate security fix). Anything that must agree across
+  machines or runs, like shard assignment, needs a fixed hash such as SHA-256.
+
+- [ ] **Fan-out / fan-in in CI** - a matrix job fans out, and an artifact
+  upload/download fans back in to one job. Read GitHub's docs on
+  `needs`, `if: always()`, and job outputs. Same shape as MapReduce.

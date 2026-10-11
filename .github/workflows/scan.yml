@@ -1,0 +1,161 @@
+name: Weekly credential scan
+
+# Tier 3. Clones every repository whose code we have not yet successfully
+# scanned (scan.worklist) and runs the credential detector on it (scan.detect).
+# Output format: docs/scan-schema.md.
+#
+# Three jobs:
+#   plan     picks one timestamp so every shard's files share a name
+#   scan     16 parallel copies ("matrix"), each scanning its slice of the list
+#   collect  gathers every shard's files and makes ONE commit
+#
+# Shards hand their files to collect as artifacts instead of each pushing,
+# because 16 jobs racing to push the same branch would mostly lose the race.
+
+on:
+  schedule:
+    # 06:41 UTC Tuesdays: the day after the Monday liveness check, so the work
+    # list is built from fresh HEADs even when Monday's run is hours late.
+    - cron: "41 6 * * 2"
+
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Scan only the first N repos PER SHARD (blank = all). For smoke tests."
+        required: false
+        default: ""
+      commit:
+        description: "Commit the results. Turn OFF for a smoke test."
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: credential-scan
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      stamp: ${{ steps.stamp.outputs.stamp }}
+    steps:
+      - id: stamp
+        run: echo "stamp=$(date -u '+%Y%m%dT%H%M%SZ')" >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 300 # 5h; a shard is ~1,000 repos on a first run, ~300 after
+    strategy:
+      # One shard failing must not cancel the others. Its repos simply have no
+      # scan line this week, so select_repos picks them up again next week.
+      fail-fast: false
+      # docs/ethics.md, "Be gentle": at most 8 shards x 3 workers = 24 clones
+      # in flight at once.
+      max-parallel: 8
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Scan shard ${{ matrix.shard }}
+        run: |
+          LIMIT_ARG=""
+          if [ -n "${{ inputs.limit }}" ]; then
+            echo "SMOKE TEST: ${{ inputs.limit }} repos per shard."
+            LIMIT_ARG="--limit ${{ inputs.limit }}"
+          fi
+          python -u -m scan.run_scan \
+            --shard ${{ matrix.shard }} --shards 16 \
+            --run-stamp "${{ needs.plan.outputs.stamp }}" $LIMIT_ARG
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scan-shard-${{ matrix.shard }}
+          # .partial files are excluded on purpose: a shard killed mid-run
+          # must never enter the data as if it were complete.
+          path: data/scans/*-shard*.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
+  collect:
+    needs: [plan, scan]
+    # Run even when some shards failed: completed shards are valid data.
+    # Only skipped if planning itself failed.
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: scan-shard-*
+          path: data/scans
+          merge-multiple: true
+
+      - name: Summarise
+        run: |
+          ls -l data/scans | tail -n 40
+          echo "scan lines this run:    $(cat data/scans/scans-${{ needs.plan.outputs.stamp }}-*.jsonl 2>/dev/null | wc -l)"
+          echo "finding lines this run: $(cat data/scans/findings-${{ needs.plan.outputs.stamp }}-*.jsonl 2>/dev/null | wc -l)"
+
+      - name: Commit the results
+        # Written out explicitly for the same reason as repo-check.yml: on a
+        # schedule the inputs context is empty, which reads as false.
+        if: github.event_name == 'schedule' || inputs.commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/scans
+          if git diff --staged --quiet; then
+            echo "Nothing new to commit."
+            exit 0
+          fi
+          git commit -m "Weekly credential scan (${{ needs.plan.outputs.stamp }})"
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            echo "Push rejected; rebasing onto origin/main and retrying."
+            git pull --rebase --autostash origin main || exit 1
+            sleep $((attempt * 3))
+          done
+          echo "Could not push after 5 attempts."
+          exit 1
+
+      # Healthy only if EVERY shard succeeded and the commit landed. A run that
+      # lost a shard still commits what it has, but must still raise the alarm.
+      - name: Check in with the dead man's switch
+        if: success() && needs.scan.result == 'success'
+        env:
+          HEALTHCHECK_URL_SCAN: ${{ secrets.HEALTHCHECK_URL_SCAN }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL_SCAN" ]; then
+            echo "No HEALTHCHECK_URL_SCAN secret set - skipping check-in."
+          else
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_URL_SCAN" && echo "Checked in."
+          fi
+
+      - name: Report failure to the dead man's switch
+        if: failure() || needs.scan.result != 'success'
+        env:
+          HEALTHCHECK_URL_SCAN: ${{ secrets.HEALTHCHECK_URL_SCAN }}
+        run: |
+          if [ -n "$HEALTHCHECK_URL_SCAN" ]; then
+            curl -fsS -m 10 --retry 3 "${HEALTHCHECK_URL_SCAN%/}/fail" && echo "Reported failure."
+          fi

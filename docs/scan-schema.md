@@ -3,7 +3,8 @@
 **Status: decided 2026-10-06 (session 15) by Nicholas. Changing it changes the
 data - treat like `RULES_VERSION`.**
 
-The scanner writes two append-only JSON Lines files per run. They are linked by
+The scanner writes two append-only JSON Lines files per run per shard, named
+`<kind>-<run stamp>-shardNNofMM.jsonl` (`scan.run_scan`, `.github/workflows/scan.yml`). They are linked by
 `(repository_url, observed_at)`.
 
 ## `data/scans/scans-<timestamp>.jsonl` - one line per repository attempted
