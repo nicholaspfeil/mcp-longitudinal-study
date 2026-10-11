@@ -785,5 +785,14 @@ Checked on 10-05 data: 16,596 to scan (equal to unique live URLs, since nothing
 has been scanned yet) and a hand-made case covering duplicates, timeout retry,
 unchanged and unreachable repos.
 
-Open: the clone-and-scan runner and workflow (Claude); fix #3 before the first
-full scan; snapshot file-size deadline.
+2026-10-11: Claude wrote `scan/run_scan.py` and `.github/workflows/scan.yml`
+(plumbing). Sixteen shards keyed by SHA-256 of the URL, eight running at once
+with 3 workers each, 180 s clone timeout, plain `--depth 1` clone. The planned
+`--filter=blob:limit=1m` was dropped: on a partial clone, checkout lazily
+fetches the filtered blobs anyway. LFS smudge is off, symlinks are checked out
+as plain files, and shards fan in through artifacts to one commit. Runs Tuesday
+06:41 UTC. Verified on 12 real repos and a canary repo. Not pushed: fix #3
+first, so the first full scan isn't spent on rules v1.
+
+Open: #3 (Nicholas); `HEALTHCHECK_URL_SCAN` secret; push, then a smoke run
+with commit off, then the first full scan; snapshot file-size deadline.
