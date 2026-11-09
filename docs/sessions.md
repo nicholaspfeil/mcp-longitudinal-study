@@ -796,3 +796,21 @@ first, so the first full scan isn't spent on rules v1.
 
 Open: #3 (Nicholas); `HEALTHCHECK_URL_SCAN` secret; push, then a smoke run
 with commit off, then the first full scan; snapshot file-size deadline.
+
+## Session 16 - 2026-11-09 - catching up after four weeks
+
+**Known gap: no Tier 1 registry snapshot for the week of 2026-10-12.** The
+scheduled run failed in "Fetch registry snapshot" after 6m27s, and the
+healthcheck alarm fired as designed. The step log was never read and the run
+was never repeated, so the cause is unknown. A registry state can't be
+reconstructed after the fact, so the gap is permanent: the 10-05 -> 10-19
+interval is two weeks wide, and Tier 1 events in it are interval-censored
+across 14 days. Tier 2 (liveness) ran normally that day. Lesson: an alarm that
+fires but isn't acted on the same day still costs the observation; the cheap
+fix was a manual re-run on 10-12.
+
+The `ubuntu-latest` -> Ubuntu 26 migration (from 10-19) went through without
+breaking anything: every run on 10-19, 10-26, 11-02 and 11-09 succeeded.
+
+Session 15's seven local commits were rebased onto the bot commits; still not
+pushed. Work list on 11-09 data: 16,457 repos.
