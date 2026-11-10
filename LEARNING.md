@@ -211,3 +211,25 @@ Format: **concept** — why it matters here — where to start.
 - [ ] **Fan-out / fan-in in CI** - a matrix job fans out, and an artifact
   upload/download fans back in to one job. Read GitHub's docs on
   `needs`, `if: always()`, and job outputs. Same shape as MapReduce.
+
+---
+
+## Session 16 - 2026-11-10 (finishing the scanner)
+
+- [ ] **Regex flags and back-references** - `re.DOTALL` lets `.` match line
+  breaks. `\1` means "the same text group 1 matched", which is how a key's END
+  line is forced to name the same type as its BEGIN line. Also look up *lazy*
+  quantifiers (`.*?`) vs greedy (`.*`), and why the difference decides whether
+  two keys in one file are found as two matches or as one giant one.
+
+- [ ] **Regression tests** - a test that pins down behaviour you already
+  verified, so a later change can't quietly break it. Run `python -m unittest
+  discover tests -v` and read `tests/test_detect.py`: each test is a claim
+  about the detector in plain Python. Then learn `pytest`, which most projects
+  use instead. A test only proves something if it can fail. That's why these
+  were also run against the old buggy detector, to watch them fail.
+
+- [ ] **Canonicalization before hashing** - two byte strings can be "the same
+  thing" (one key, different line endings). Hashing compares bytes, so you have
+  to decide what "same" means *before* you hash. Look up canonical forms; JSON
+  canonicalization (RFC 8785) is a good example.

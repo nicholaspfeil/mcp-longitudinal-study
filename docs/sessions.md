@@ -814,3 +814,39 @@ breaking anything: every run on 10-19, 10-26, 11-02 and 11-09 succeeded.
 
 Session 15's seven local commits were rebased onto the bot commits; still not
 pushed. Work list on 11-09 data: 16,457 repos.
+
+**Later the same session, at Nicholas's direction ("no more asking questions,
+just build it"):** he explicitly set aside CLAUDE.md rules 1 and 2 to get the
+scanner finished. So everything below was written by Claude, not him. Each
+change was explained afterwards rather than decided together beforehand.
+
+- **Private-key fingerprint bug fixed (gap #3); `RULES_VERSION` 1 -> 2.** v1
+  matched only the `-----BEGIN ... PRIVATE KEY-----` line, because `scan_text`
+  hands each pattern one line at a time, so every RSA key in the world got the
+  same fingerprint. Nicholas confirmed the fingerprints collide, and chose
+  option (a): match whole BEGIN..END blocks. Now `scan_private_keys()` runs
+  over the whole file. BEGIN and END must name the same type, and the body is
+  capped at 10,000 chars. Identity is the key type plus the body's base64
+  characters only, so CRLF vs LF, re-wrapping, YAML indentation and JSON `\n`
+  escaping (the Google service-account format) all give one fingerprint.
+  Bodies under 60 base64 chars are treated as placeholders. Trade-off: a
+  BEGIN line with no END no longer counts. No scan data existed yet, so
+  nothing needs re-scanning.
+- **First test suite:** `tests/`, stdlib `unittest`, so no new dependency.
+  24 tests: the six session-14 fixtures, private keys, `select_repos`, and the
+  snapshot layout. Checked against the v1 detector: 5 tests fail there, so the
+  tests can catch the bug. The scan workflow runs them before every scan.
+- **Snapshot size (gap #6) was urgent.** Files reached 61.9 MB on 11-09,
+  growing ~5.5 MB/week, which would hit GitHub's 100 MB push limit in late
+  December. New snapshots are now `data/raw/registry-<stamp>/part-NNN.jsonl`,
+  each under 40 MB. Old single files are untouched (append-only).
+  `scan/snapshots.py` is the only code that knows the layout; `diff`,
+  `characterize` and `freeze_panel` now read through it. Verified by
+  re-writing the real 11-09 snapshot: 60,528 records byte-identical across 2
+  parts, and `diff` against the original reports zero events.
+
+Open: `HEALTHCHECK_URL_SCAN` secret; a manual smoke run of the scan
+(limit 5, commit off) before the first scheduled full run on Tuesday 11-17;
+the 11-16 snapshot is the first in the new layout, so check it landed;
+undecided: death-rule N, the definition of "fixed", and a live-key disclosure
+policy (RQ2).
