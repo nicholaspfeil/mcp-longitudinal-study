@@ -18,6 +18,8 @@ import argparse
 import json
 from pathlib import Path
 
+from scan.snapshots import iter_lines, list_snapshots
+
 # The registry nests its bookkeeping under this very long key. Note this is the
 # _meta on `entry`, present 100% of the time -- NOT the server-level `_meta`,
 # which is publisher-supplied and present in only ~4% of records.
@@ -46,20 +48,19 @@ def load_snapshot(path: Path) -> tuple[dict[str, dict], str]:
     by_name: dict[str, dict] = {}
     observed_at = ""
 
-    with path.open(encoding="utf-8") as f:
-        for line_no, line in enumerate(f, 1):
-            record = json.loads(line)
-            observed_at = record["observed_at"]
-            entry = record["entry"]
-            name = entry["server"]["name"]
-            if name in by_name:
-                raise ValueError(
-                    f"{path.name} line {line_no}: duplicate name {name!r}. "
-                    f"Identity is not unique in this snapshot, so every "
-                    f"comparison downstream is unsound. Investigate before "
-                    f"going further."
-                )
-            by_name[name] = entry
+    for line_no, line in enumerate(iter_lines(path), 1):
+        record = json.loads(line)
+        observed_at = record["observed_at"]
+        entry = record["entry"]
+        name = entry["server"]["name"]
+        if name in by_name:
+            raise ValueError(
+                f"{path.name} line {line_no}: duplicate name {name!r}. "
+                f"Identity is not unique in this snapshot, so every "
+                f"comparison downstream is unsound. Investigate before "
+                f"going further."
+            )
+        by_name[name] = entry
 
     return by_name, observed_at
 
@@ -165,7 +166,7 @@ def main() -> None:
     if args.old and args.new:
         old_path, new_path = Path(args.old), Path(args.new)
     else:
-        snapshots = sorted(Path("data/raw").glob("registry-*.jsonl"))
+        snapshots = list_snapshots()
         if len(snapshots) < 2:
             raise SystemExit("Need at least two snapshots to diff.")
         old_path, new_path = snapshots[-2], snapshots[-1]

@@ -20,6 +20,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from scan.snapshots import write_snapshot
+
 BASE_URL = "https://registry.modelcontextprotocol.io/v0/servers"
 
 # We identify ourselves. docs/ethics.md, "Operating rules".
@@ -163,14 +165,14 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = out_dir / f"registry-{stamp}.jsonl"
 
-    with out_path.open("w", encoding="utf-8") as f:
-        for entry in servers:
-            record = {"observed_at": observed_at, "entry": entry}
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    # Split into parts under 40 MB each: one file would pass GitHub's 100 MB
+    # push limit within weeks. See scan/snapshots.py.
+    records = ({"observed_at": observed_at, "entry": entry} for entry in servers)
+    out_path = write_snapshot(records, out_dir, stamp)
+    parts = len(list(out_path.glob("part-*.jsonl")))
 
-    print(f"\nWrote {len(servers)} entries to {out_path}")
+    print(f"\nWrote {len(servers)} entries to {out_path} ({parts} part(s))")
 
 
 if __name__ == "__main__":

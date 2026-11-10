@@ -44,6 +44,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from scan.snapshots import iter_lines, list_snapshots
+
 META_KEY = "io.modelcontextprotocol.registry/official"
 
 
@@ -59,33 +61,32 @@ def build_panel(snapshot_path: Path) -> dict:
     observed_at = ""
     skipped_no_repo = 0
 
-    with snapshot_path.open(encoding="utf-8") as f:
-        for line in f:
-            record = json.loads(line)
-            observed_at = record["observed_at"]
-            entry = record["entry"]
-            server = entry["server"]
+    for line in iter_lines(snapshot_path):
+        record = json.loads(line)
+        observed_at = record["observed_at"]
+        entry = record["entry"]
+        server = entry["server"]
 
-            repository = server.get("repository")
-            if not repository:
-                skipped_no_repo += 1
-                continue
+        repository = server.get("repository")
+        if not repository:
+            skipped_no_repo += 1
+            continue
 
-            meta = entry.get("_meta", {}).get(META_KEY, {})
-            name = server["name"]
-            servers.append({
-                "name": name,
-                # Reverse-DNS namespace before the slash. Recorded now so
-                # publisher-weighted analysis stays possible without having to
-                # re-derive it, and because one publisher producing thousands
-                # of servers is a known distortion in this data.
-                "publisher": name.split("/")[0],
-                "repository_url": repository.get("url"),
-                "repository_source": repository.get("source"),
-                "version_at_freeze": server.get("version"),
-                "status_at_freeze": meta.get("status"),
-                "published_at": meta.get("publishedAt"),
-            })
+        meta = entry.get("_meta", {}).get(META_KEY, {})
+        name = server["name"]
+        servers.append({
+            "name": name,
+            # Reverse-DNS namespace before the slash. Recorded now so
+            # publisher-weighted analysis stays possible without having to
+            # re-derive it, and because one publisher producing thousands
+            # of servers is a known distortion in this data.
+            "publisher": name.split("/")[0],
+            "repository_url": repository.get("url"),
+            "repository_source": repository.get("source"),
+            "version_at_freeze": server.get("version"),
+            "status_at_freeze": meta.get("status"),
+            "published_at": meta.get("publishedAt"),
+        })
 
     return {
         "frozen_at": datetime.now(timezone.utc).isoformat(),
@@ -109,7 +110,7 @@ def main() -> None:
     if args.snapshot:
         snapshot_path = Path(args.snapshot)
     else:
-        snapshots = sorted(Path("data/raw").glob("registry-*.jsonl"))
+        snapshots = list_snapshots()
         if not snapshots:
             raise SystemExit("No snapshots in data/raw.")
         snapshot_path = snapshots[-1]

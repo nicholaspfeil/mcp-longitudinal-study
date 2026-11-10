@@ -3,11 +3,13 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from scan.snapshots import iter_lines, list_snapshots
+
 # The registry nests its bookkeeping under this very long key.
 META_KEY = "io.modelcontextprotocol.registry/official"
 
 # Newest snapshot in data/raw
-path = sorted(Path("data/raw").glob("registry-*.jsonl"))[-1]
+path = list_snapshots()[-1]
 
 # --- counters, set up before the loop ---
 names = set()
@@ -20,31 +22,30 @@ statuses = Counter()
 published = []
 
 # --- one pass over the file, updating counters as records go by ---
-with path.open(encoding="utf-8") as f:
-    for line in f:
-        record = json.loads(line)
-        entry = record["entry"]
-        server = entry["server"]
-        meta = entry.get("_meta", {}).get(META_KEY, {})
+for line in iter_lines(path):
+    record = json.loads(line)
+    entry = record["entry"]
+    server = entry["server"]
+    meta = entry.get("_meta", {}).get(META_KEY, {})
 
-        total += 1
-        names.add(server["name"])
+    total += 1
+    names.add(server["name"])
 
-        repository = server.get("repository")
-        if repository:
-            with_repo += 1
-            repo_sources[repository.get("source", "unknown")] += 1
+    repository = server.get("repository")
+    if repository:
+        with_repo += 1
+        repo_sources[repository.get("source", "unknown")] += 1
 
-        if server.get("packages"):
-            with_packages += 1
+    if server.get("packages"):
+        with_packages += 1
 
-        if server.get("remotes"):
-            with_remotes += 1
+    if server.get("remotes"):
+        with_remotes += 1
 
-        statuses[meta.get("status", "MISSING")] += 1
+    statuses[meta.get("status", "MISSING")] += 1
 
-        if "publishedAt" in meta:
-            published.append(meta["publishedAt"])
+    if "publishedAt" in meta:
+        published.append(meta["publishedAt"])
 
 # --- printing, after the loop ---
 print(f"file:          {path.name}")
