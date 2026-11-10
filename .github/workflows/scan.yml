@@ -70,6 +70,11 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      # A detector that has drifted must never write a week of data. Takes
+      # well under a second.
+      - name: Detector regression tests
+        run: python -m unittest discover tests -v
+
       - name: Scan shard ${{ matrix.shard }}
         run: |
           LIMIT_ARG=""

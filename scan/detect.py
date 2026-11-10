@@ -45,8 +45,14 @@ import json
 import re
 from pathlib import Path
 
-# Bump this on ANY change to RULES or ALLOWLIST below, then re-scan history.
-RULES_VERSION = 1
+# Bump this on ANY change to RULES, PRIVATE_KEY_BLOCK or ALLOWLIST below, then
+# re-scan history.
+#
+#   1  2026-09-16  first version
+#   2  2026-11-10  private keys matched BEGIN..END and fingerprinted on the key
+#                  body; v1 matched only the BEGIN line, so every RSA key in the
+#                  world shared one fingerprint (session 16)
+RULES_VERSION = 2
 
 # Chosen because each format is unambiguous -- a string matching one of these
 # is a credential, not a coincidence.
@@ -61,10 +67,30 @@ RULES: dict[str, str] = {
     "google_api_key":     r"AIza[0-9A-Za-z_-]{35}",
     "stripe_live_key":    r"sk_live_[0-9a-zA-Z]{24}",
     "slack_token":        r"xox[baprs]-[0-9A-Za-z-]{10,}",
-    "private_key_block":  r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
 }
 
 COMPILED = {name: re.compile(pattern) for name, pattern in RULES.items()}
+
+# Private keys span many lines, so they cannot be one of the line-at-a-time
+# RULES above: a pattern given one line never sees the key material below the
+# BEGIN line. This one runs over the whole file instead.
+#
+#   - BEGIN and END must name the same key type (the \1 back-reference).
+#   - The body is capped at 10,000 characters so a stray BEGIN in a README can
+#     never pair with an unrelated END pages later. A 4096-bit RSA key is ~3,300.
+#   - DOTALL lets `.` cross line breaks. It also matches keys written on ONE
+#     line with literal backslash-n escapes -- the format of Google
+#     service-account JSON files, the most commonly leaked private key of all.
+PRIVATE_KEY_RULE = "private_key_block"
+PRIVATE_KEY_BLOCK = re.compile(
+    r"-----BEGIN ([A-Z ]*)PRIVATE KEY-----(.{0,10000}?)-----END \1PRIVATE KEY-----",
+    re.DOTALL,
+)
+
+# A real key body is hundreds of base64 characters (the smallest common key,
+# Ed25519, is ~64). Fewer than this is a documentation placeholder such as
+# "...", "<your key here>" or "MIIE...", not a credential.
+MIN_KEY_BODY_CHARS = 60
 
 # Documentation placeholders that match the patterns above but are not real
 # credentials. These are stable false positives -- they do not flicker, so they
@@ -143,6 +169,41 @@ def fingerprint(matched_text: str) -> str:
     return hashlib.sha256(matched_text.encode("utf-8")).hexdigest()
 
 
+def private_key_identity(body: str) -> str:
+    """The part of a key block that identifies the key: base64 characters only.
+
+    A deliberate normalisation, unlike the line rules, which hash exactly what
+    they match. The same key can be stored with LF or CRLF line endings
+    (git converts them per machine), indented inside YAML, or escaped as a
+    literal backslash-n inside JSON. None of those change the key, and none may
+    change its fingerprint, or a checkout on a different OS reads as one key
+    fixed and another leaked.
+
+    Literal backslash-n / backslash-r escapes are removed first, before their
+    'n' or 'r' could be kept as a base64 character.
+    """
+    body = body.replace("\\n", "").replace("\\r", "")
+    return "".join(re.findall(r"[A-Za-z0-9+/=]", body))
+
+
+def scan_private_keys(text: str, relative_path: str) -> list[dict]:
+    """Find every complete private key block in a whole file. Written by Claude."""
+    findings: list[dict] = []
+    for match in PRIVATE_KEY_BLOCK.finditer(text):
+        identity = private_key_identity(match.group(2))
+        if len(identity) < MIN_KEY_BODY_CHARS:
+            continue
+        findings.append({
+            "file": relative_path,
+            # Line of the BEGIN marker: count the line breaks before it.
+            "line": text.count("\n", 0, match.start()) + 1,
+            "rule": PRIVATE_KEY_RULE,
+            # Key type plus body, so an RSA and an EC key can never collide.
+            "match_sha256": fingerprint(match.group(1) + identity),
+        })
+    return findings
+
+
 def scan_text(text: str, relative_path: str) -> list[dict]:
     """Find every credential in one file's text.
 
@@ -199,6 +260,8 @@ def scan_text(text: str, relative_path: str) -> list[dict]:
                     "match_sha256": fingerprint(matched_text),
                 })
 
+    # Rules version 2: multi-line private keys, scanned over the whole file.
+    findings.extend(scan_private_keys(text, relative_path))
     return findings
 
 
