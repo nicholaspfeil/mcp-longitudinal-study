@@ -36,3 +36,7 @@ data/clones/
 # next week's run "resume" a previous week's observation and stamp this week's
 # results with last week's observed_at.
 *.jsonl.partial
+
+# Local try-out scans (python -m scan.run_scan --repos-file ...). Not
+# observations of the panel; they must never be mistaken for the dataset.
+local-scans/

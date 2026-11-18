@@ -850,3 +850,31 @@ Open: `HEALTHCHECK_URL_SCAN` secret; a manual smoke run of the scan
 the 11-16 snapshot is the first in the new layout, so check it landed;
 undecided: death-rule N, the definition of "fixed", and a live-key disclosure
 policy (RQ2).
+
+## Session 17 - 2026-11-17 (first scan results, Defender incident, laptop guard)
+
+The first full v2 scan (11-17) covered 16,442 repos. 655 had findings, but
+most were false positives: fake keys in the test files of secret-redaction
+tools, placeholders like `ghp_xxxx...`, and a loose Slack pattern. I wrote a
+one-off precision audit in my scratch folder (NOT in this repo) that
+re-cloned those 655 repos **on Nicholas's laptop**. That was a mistake.
+Windows Defender quarantined attack-example files from several of them
+(prompt-injection corpora, exploit tests) between 14:19 and 15:33, left
+`audit-*` folders in Temp that couldn't be deleted while it held them, and
+the audit's report was lost. Nothing was scheduled; the ~30 min spacing was
+the audit's progress through the repos. Changes, all written by Claude at
+Nicholas's request ("use your best judgement"):
+- `select_repos()` now only counts scans by the current `RULES_VERSION`, so a
+  rules bump re-scans every live repo.
+- `run_scan.py` refuses a full scan unless `GITHUB_ACTIONS=true`. Locally it
+  takes `--repos-file tests/safe_repos.txt` (4 vendor repos that scanned clean)
+  and writes to the gitignored `local-scans/`, never `data/`.
+- `sweep_leftovers()` deletes `mcpscan-*` folders at the start and end of
+  every run and prints how many remain, instead of failing silently.
+- Decided NOT to skip tests/corpus folders: a key in a test file is still a
+  leak, and v3 needs to see those paths to label them.
+- 30 tests pass.
+Open: re-run the precision audit as a manual Actions workflow (never local),
+then design rules v3 from its counts. Research decisions still Nicholas's:
+the death rule N, the definition of "fixed", and a disclosure policy for live
+keys.

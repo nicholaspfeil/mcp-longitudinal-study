@@ -23,6 +23,8 @@ import argparse
 import json
 from pathlib import Path
 
+from scan.detect import RULES_VERSION
+
 REPO_STATE_DIR = Path("data/repo-state")
 SCANS_DIR = Path("data/scans")
 
@@ -56,7 +58,8 @@ def load_scan_history() -> list[dict]:
     return rows
 
 
-def select_repos(liveness: list[dict], scan_history: list[dict]) -> list[str]:
+def select_repos(liveness: list[dict], scan_history: list[dict],
+                 rules_version: int = RULES_VERSION) -> list[str]:
     """Return the repository URLs to scan this week.
 
     Written by Claude at Nicholas's request (session 15), with a line-by-line
@@ -96,10 +99,16 @@ def select_repos(liveness: list[dict], scan_history: list[dict]) -> list[str]:
     """
     # Every (repo, commit) we have actually read. Only "scanned" counts: a
     # timeout or unreachable attempt read nothing, so that repo comes back.
+    #
+    # Only scans by the CURRENT detector count (added session 17). When
+    # RULES_VERSION is bumped, every older scan stops counting, so every live
+    # repo is re-scanned once under the new rules -- the re-scan policy in
+    # scan/detect.py. Without this, a rule change would only ever reach repos
+    # whose code happened to change, and the series would mix versions.
     already_scanned = {
         (row["repository_url"], row["commit_sha"])
         for row in scan_history
-        if row["status"] == "scanned"
+        if row["status"] == "scanned" and row["rules_version"] == rules_version
     }
 
     to_scan: set[str] = set()

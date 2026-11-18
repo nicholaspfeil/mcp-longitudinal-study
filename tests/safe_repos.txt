@@ -1,0 +1,13 @@
+# Repos a LOCAL try-out of scan/run_scan.py may clone (session 17).
+#
+# Chosen because each is published by a large, known organisation, is an
+# ordinary MCP server or tool (not a security-testing project, so no attack
+# corpora), and scanned clean (status "scanned", 0 findings) on 2026-11-17.
+# Keep it short and boring. Full scans happen on GitHub Actions only.
+#
+# Results of a run over this list go to local-scans/ (gitignored), never data/.
+
+https://github.com/modelcontextprotocol/registry
+https://github.com/microsoft/azure-devops-mcp
+https://github.com/microsoft/mcp-dotnet-samples
+https://github.com/cloudflare/mcp-server-cloudflare

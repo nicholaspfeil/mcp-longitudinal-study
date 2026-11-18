@@ -137,9 +137,9 @@ class WorkList(unittest.TestCase):
         {"repository_url": "D", "reachable": True, "head_sha": "d1"},
     ]
     HISTORY = [
-        {"repository_url": "A", "commit_sha": "a1", "status": "timeout"},
-        {"repository_url": "B", "commit_sha": "b1", "status": "scanned"},
-        {"repository_url": "D", "commit_sha": "d1", "status": "scanned"},
+        {"repository_url": "A", "commit_sha": "a1", "status": "timeout", "rules_version": RULES_VERSION},
+        {"repository_url": "B", "commit_sha": "b1", "status": "scanned", "rules_version": RULES_VERSION},
+        {"repository_url": "D", "commit_sha": "d1", "status": "scanned", "rules_version": RULES_VERSION},
     ]
 
     def test_first_run_scans_every_live_repo_once(self):
@@ -149,6 +149,11 @@ class WorkList(unittest.TestCase):
         # A: failed last time -> retried, once.  B: new commit -> scanned.
         # C: unreachable -> skipped.             D: unchanged -> skipped.
         self.assertEqual(select_repos(self.LIVENESS, self.HISTORY), ["A", "B"])
+
+    def test_rules_bump_rescans_unchanged_repos(self):
+        """D is unchanged, but was scanned by an older detector: scan it again."""
+        older = [dict(r, rules_version=RULES_VERSION - 1) for r in self.HISTORY]
+        self.assertEqual(select_repos(self.LIVENESS, older), ["A", "B", "D"])
 
 
 if __name__ == "__main__":

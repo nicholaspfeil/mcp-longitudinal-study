@@ -15,9 +15,14 @@ runs the shards as parallel jobs. Python's built-in hash() is NOT used: it is
 randomised per process for strings, so two shards would disagree about who owns
 what, and some repos would be scanned twice and others never.
 
-Usage:
-    python -m scan.run_scan --limit 10                # try it locally
-    python -m scan.run_scan --shard 3 --shards 16     # one shard of a real run
+Where it runs (session 17): full runs happen ONLY on GitHub Actions. They
+clone thousands of strangers' repos, some of which ship attack examples
+(prompt-injection corpora, exploit tests) that antivirus rightly quarantines.
+A runner is a throwaway machine; a laptop is not. Locally, the script only
+accepts a fixed list of known repos and writes outside data/:
+
+    python -m scan.run_scan --repos-file tests/safe_repos.txt   # local try-out
+    python -m scan.run_scan --shard 3 --shards 16               # Actions only
 """
 
 from __future__ import annotations
@@ -81,10 +86,41 @@ def classify_clone_error(stderr: str) -> str:
     return "unreachable"
 
 
+TEMP_PREFIX = "mcpscan-"
+LOCAL_OUT_DIR = "local-scans"   # gitignored: try-out results never enter data/
+
+
 def _force_remove(func, path, _exc) -> None:
     """Let rmtree delete git's read-only object files on Windows."""
     os.chmod(path, stat.S_IWRITE)
     func(path)
+
+
+def sweep_leftovers(root: Path | None = None) -> int:
+    """Delete clone folders a previous run left behind. Returns how many remain.
+
+    try/finally in scan_one covers crashes INSIDE Python, but nothing covers the
+    process being killed, and on Windows a delete fails while another program
+    (an antivirus mid-scan) has a file open. So sweep at start and end of every
+    run, and report what could not be removed instead of hiding it.
+
+    Assumes one run per machine at a time: a second concurrent run would have
+    its live clones deleted. True on Actions (one shard per VM) and for local
+    try-outs.
+    """
+    root = Path(root or tempfile.gettempdir())
+    for leftover in root.glob(f"{TEMP_PREFIX}*"):
+        try:
+            shutil.rmtree(leftover, onexc=_force_remove)
+        except OSError:
+            pass   # counted below; one locked folder must not stop the run
+    return sum(1 for _ in root.glob(f"{TEMP_PREFIX}*"))
+
+
+def read_repos_file(path: Path) -> list[str]:
+    """One URL per line; blank lines and # comments ignored. Mechanical."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [s for s in (l.split("#", 1)[0].strip() for l in lines) if s]
 
 
 def scan_one(url: str) -> tuple[dict, list[dict]]:
@@ -104,7 +140,7 @@ def scan_one(url: str) -> tuple[dict, list[dict]]:
         "error": None,
     }
     findings: list[dict] = []
-    workdir = Path(tempfile.mkdtemp(prefix="mcpscan-"))
+    workdir = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
     checkout = workdir / "repo"
 
     try:
@@ -158,7 +194,8 @@ def scan_one(url: str) -> tuple[dict, list[dict]]:
         line["status"] = "scan_error"
         line["error"] = f"{type(exc).__name__}: {exc}"[:200]
     finally:
-        # A leftover temp dir costs disk; a raise here would cost the scan line.
+        # A raise here would replace the scan line, so failures are swallowed
+        # HERE and counted by sweep_leftovers() at the end of the run instead.
         try:
             shutil.rmtree(workdir, onexc=_force_remove)
         except OSError:
@@ -172,17 +209,39 @@ def main() -> None:
     parser.add_argument("--shard", type=int, default=0)
     parser.add_argument("--shards", type=int, default=1)
     parser.add_argument("--limit", type=int, default=None,
-                        help="scan only the first N of this shard (for trying it out)")
+                        help="scan only the first N of this shard (Actions manual runs)")
+    parser.add_argument("--repos-file", type=Path, default=None,
+                        help="scan exactly these URLs instead of the work list (local runs)")
     parser.add_argument("--run-stamp", default=None,
                         help="shared timestamp naming every shard's files in one run")
-    parser.add_argument("--out-dir", default="data/scans")
+    parser.add_argument("--out-dir", default=None,
+                        help=f"default: data/scans, or {LOCAL_OUT_DIR}/ with --repos-file")
     parser.add_argument("--workers", type=int, default=WORKERS_PER_SHARD)
     args = parser.parse_args()
 
     if not 0 <= args.shard < args.shards:
         raise SystemExit(f"--shard must be in 0..{args.shards - 1}")
 
-    urls = select_repos(load_latest_liveness(), load_scan_history())
+    # GitHub sets GITHUB_ACTIONS=true on every runner. Anywhere else, only a
+    # fixed list is allowed -- see the module docstring for why.
+    on_actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    if args.repos_file is None and not on_actions:
+        raise SystemExit(
+            "Full scans run only on GitHub Actions (they clone thousands of\n"
+            "untrusted repos). Locally, use:\n"
+            "    python -m scan.run_scan --repos-file tests/safe_repos.txt"
+        )
+    if args.out_dir is None:
+        args.out_dir = LOCAL_OUT_DIR if args.repos_file else "data/scans"
+
+    left = sweep_leftovers()
+    if left:
+        print(f"WARNING: {left} leftover {TEMP_PREFIX}* folder(s) could not be deleted")
+
+    if args.repos_file:
+        urls = read_repos_file(args.repos_file)
+    else:
+        urls = select_repos(load_latest_liveness(), load_scan_history())
     mine = [u for u in urls if shard_of(u, args.shards) == args.shard]
     if args.limit:
         mine = mine[:args.limit]
@@ -230,6 +289,9 @@ def main() -> None:
         print(f"  {status:<12} {n:>6,}")
     print(f"  findings     {total_findings:>6,}")
     print(f"  took {(time.time() - started) / 60:.1f} min")
+
+    left = sweep_leftovers()
+    print(f"  leftover clone folders: {left}")
 
 
 if __name__ == "__main__":

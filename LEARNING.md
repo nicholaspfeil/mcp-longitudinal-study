@@ -233,3 +233,32 @@ Format: **concept** — why it matters here — where to start.
   thing" (one key, different line endings). Hashing compares bytes, so you have
   to decide what "same" means *before* you hash. Look up canonical forms; JSON
   canonicalization (RFC 8785) is a good example.
+
+---
+
+## Session 17 - 2026-11-17 (Defender quarantines and temp-folder cleanup)
+
+- [ ] **try/finally** - code in `finally:` runs whether the `try:` block
+  returns, raises or finishes normally. It is how you promise cleanup. Two
+  gaps to know: if code *inside* `finally` raises, that new error replaces
+  whatever was happening before it, even a `return`. And if the process itself
+  is killed (Task Manager, a session closing, a power cut), `finally` never
+  runs at all. Python can't clean up after a process that no longer exists.
+
+- [ ] **tempfile.TemporaryDirectory** - a context manager (`with ... as d:`)
+  that creates a temp folder and deletes it when the block exits. Underneath
+  it's the same try/finally. Read the docs for `ignore_cleanup_errors=True`
+  (Python 3.10+) and look up *context managers* and `__exit__`. Then see why
+  `shutil.rmtree` fails on Windows when a file is read-only (git's object
+  files are) or another program has it open (an antivirus scanning it).
+
+- [ ] **Sparse checkout and partial clone** - `git sparse-checkout` writes only
+  some folders to disk, and `--filter=blob:none` downloads file contents only
+  when they're needed. Learn both, then ask the research question first:
+  *which files does skipping make invisible?* A leak in `tests/` is still a
+  leak. Measurement shortcuts change what you measure.
+
+- [ ] **Antivirus and security-research data** - a study that downloads other
+  people's code will download attack examples too (prompt-injection corpora,
+  exploit test cases). Antivirus is right to flag them. The fix is *where* you
+  run the work (a throwaway CI machine), not turning protection off.
